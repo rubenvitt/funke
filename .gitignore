@@ -1,0 +1,30 @@
+# Xcode / build artifacts
+DerivedData/
+build/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode user-specific project settings (keep the shared .xcodeproj, drop per-user state)
+**/xcshareddata/WorkspaceSettings.xcsettings
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager (not used, but guard anyway)
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Secrets — NEVER commit. Funke keeps all tokens in the Keychain at runtime.
+*.secret
+Secrets.plist
+secrets.json
+.env
