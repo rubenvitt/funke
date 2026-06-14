@@ -105,8 +105,7 @@ final class ClickUpClientTests: XCTestCase {
             listID: "l1",
             name: "Bericht schreiben",
             markdownDescription: "**wichtig**",
-            priority: .high,
-            tags: ["arbeit", "doku"]
+            priority: .high
         )
 
         XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
@@ -119,7 +118,7 @@ final class ClickUpClientTests: XCTestCase {
         XCTAssertNil(body["markdown_description"], "Falscher Markdown-Feldname")
         // Priorität als Integer (high == 2), nicht als String/Objekt.
         XCTAssertEqual(body["priority"] as? Int, 2)
-        XCTAssertEqual(body["tags"] as? [String], ["arbeit", "doku"])
+        XCTAssertNil(body["tags"], "tags wurden entfernt und dürfen nicht im Body stehen")
     }
 
     func testCreateTaskOmitsPriorityAndMarkdownWhenNil() async throws {
@@ -128,15 +127,14 @@ final class ClickUpClientTests: XCTestCase {
             listID: "l1",
             name: "Nur Titel",
             markdownDescription: nil,
-            priority: nil,
-            tags: []
+            priority: nil
         )
 
         let body = try lastBodyJSON()
         XCTAssertEqual(body["name"] as? String, "Nur Titel")
         XCTAssertNil(body["priority"], "priority muss bei nil weggelassen werden")
         XCTAssertNil(body["markdown_content"], "markdown_content muss bei nil weggelassen werden")
-        XCTAssertEqual(body["tags"] as? [String], [])
+        XCTAssertNil(body["tags"], "tags wurden entfernt und dürfen nicht im Body stehen")
     }
 
     // MARK: - todayTasks (due_date_lt mit fixem now)
@@ -299,8 +297,7 @@ final class ClickUpClientTests: XCTestCase {
                 listID: "missing",
                 name: "x",
                 markdownDescription: nil,
-                priority: nil,
-                tags: []
+                priority: nil
             )
             XCTFail("Erwartete ClickUpError.http")
         } catch let error as ClickUpError {

@@ -7,7 +7,6 @@ struct EnrichmentReviewView: View {
     @State private var title: String
     @State private var details: String
     @State private var priority: Priority
-    @State private var tag: String
 
     private let onConfirm: (EnrichmentSuggestion) -> Void
     private let onCancel: () -> Void
@@ -20,7 +19,6 @@ struct EnrichmentReviewView: View {
         _title = State(initialValue: suggestion.title)
         _details = State(initialValue: suggestion.details ?? "")
         _priority = State(initialValue: suggestion.priority)
-        _tag = State(initialValue: suggestion.tag ?? "")
         self.onConfirm = onConfirm
         self.onCancel = onCancel
     }
@@ -46,12 +44,6 @@ struct EnrichmentReviewView: View {
                     }
                     .pickerStyle(.menu)
                 }
-
-                Section("Tag") {
-                    TextField("Tag (optional)", text: $tag)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
             }
             .navigationTitle("Vorschlag prüfen")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,12 +67,10 @@ struct EnrichmentReviewView: View {
 
     private func makeSuggestion() -> EnrichmentSuggestion {
         let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         return EnrichmentSuggestion(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             details: trimmedDetails.isEmpty ? nil : trimmedDetails,
-            priority: priority,
-            tag: trimmedTag.isEmpty ? nil : trimmedTag
+            priority: priority
         )
     }
 }

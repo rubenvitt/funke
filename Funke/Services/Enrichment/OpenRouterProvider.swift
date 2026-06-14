@@ -30,6 +30,36 @@ struct OpenRouterProvider: AIEnrichmentProvider {
     }
 
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion {
+        let content = try await requestText(
+            rawText: rawText,
+            systemInstruction: EnrichmentPrompt.systemInstruction,
+            schemaString: EnrichmentPrompt.jsonSchemaString,
+            schemaName: "task"
+        )
+        return try EnrichmentResponseParser.parse(content)
+    }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        let content = try await requestText(
+            rawText: rawText,
+            systemInstruction: NotePrompt.systemInstruction,
+            schemaString: NotePrompt.jsonSchemaString,
+            schemaName: "note"
+        )
+        return try NoteResponseParser.parse(content)
+    }
+
+    // MARK: - Geteilte HTTP-Maschinerie
+
+    /// Führt die Chat-Completions-Anfrage aus und liefert den Content-String der
+    /// ersten Choice. Wird von `enrich` und `enrichNote` mit unterschiedlichem
+    /// System-Prompt/Schema geteilt; die Parser-Wahl bleibt beim Aufrufer.
+    private func requestText(
+        rawText: String,
+        systemInstruction: String,
+        schemaString: String,
+        schemaName: String
+    ) async throws -> String {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
 
@@ -37,7 +67,13 @@ struct OpenRouterProvider: AIEnrichmentProvider {
             throw EnrichmentError.missingAPIKey(provider: kind.displayName)
         }
 
-        let request = try makeRequest(key: key, rawText: rawText)
+        let request = try makeRequest(
+            key: key,
+            rawText: rawText,
+            systemInstruction: systemInstruction,
+            schemaString: schemaString,
+            schemaName: schemaName
+        )
 
         let data: Data
         let response: URLResponse
@@ -55,25 +91,31 @@ struct OpenRouterProvider: AIEnrichmentProvider {
             throw EnrichmentError.http(status: http.statusCode, message: Self.errorMessage(from: data))
         }
 
-        return try Self.suggestion(from: data)
+        return try Self.content(from: data)
     }
 
     // MARK: - Request
 
-    private func makeRequest(key: String, rawText: String) throws -> URLRequest {
-        let schema = try Self.schemaObject()
+    private func makeRequest(
+        key: String,
+        rawText: String,
+        systemInstruction: String,
+        schemaString: String,
+        schemaName: String
+    ) throws -> URLRequest {
+        let schema = try Self.schemaObject(from: schemaString)
 
         let body: [String: Any] = [
             "model": model,
             "max_tokens": Self.maxTokens,
             "messages": [
-                ["role": "system", "content": EnrichmentPrompt.systemInstruction],
+                ["role": "system", "content": systemInstruction],
                 ["role": "user", "content": rawText]
             ],
             "response_format": [
                 "type": "json_schema",
                 "json_schema": [
-                    "name": "task",
+                    "name": schemaName,
                     "strict": true,
                     "schema": schema
                 ]
@@ -97,9 +139,9 @@ struct OpenRouterProvider: AIEnrichmentProvider {
         return request
     }
 
-    /// Schält das geteilte JSON-Schema in ein eingebettetes JSON-Objekt.
-    private static func schemaObject() throws -> [String: Any] {
-        guard let schemaData = EnrichmentPrompt.jsonSchemaString.data(using: .utf8) else {
+    /// Schält ein JSON-Schema (als String) in ein eingebettetes JSON-Objekt.
+    private static func schemaObject(from schemaString: String) throws -> [String: Any] {
+        guard let schemaData = schemaString.data(using: .utf8) else {
             throw EnrichmentError.invalidResponse("JSON-Schema konnte nicht kodiert werden.")
         }
         let object: Any
@@ -126,7 +168,7 @@ struct OpenRouterProvider: AIEnrichmentProvider {
         let choices: [Choice]
     }
 
-    private static func suggestion(from data: Data) throws -> EnrichmentSuggestion {
+    private static func content(from data: Data) throws -> String {
         let decoded: ChatResponse
         do {
             decoded = try JSONDecoder().decode(ChatResponse.self, from: data)
@@ -138,7 +180,7 @@ struct OpenRouterProvider: AIEnrichmentProvider {
             throw EnrichmentError.invalidResponse("Keine Textantwort im Ergebnis.")
         }
 
-        return try EnrichmentResponseParser.parse(content)
+        return content
     }
 
     /// Liest `{"error":{"message":...}}` aus dem Fehlerkörper; sonst `nil`.

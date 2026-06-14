@@ -87,7 +87,7 @@ final class CaptureViewModelTests: XCTestCase {
     func testCaptureWithEnrichmentSetsReview() async {
         let clickUp = MockClickUp()
         let enrichment = MockEnrichment()
-        enrichment.result = EnrichmentSuggestion(title: "Veredelt", details: "Mehr", priority: .high, tag: "haus")
+        enrichment.result = EnrichmentSuggestion(title: "Veredelt", details: "Mehr", priority: .high)
         let settings = makeSettings(inbox: "list-1", enrichment: true)
         let vm = CaptureViewModel(
             clickUp: clickUp,
@@ -116,7 +116,7 @@ final class CaptureViewModelTests: XCTestCase {
             queue: MockQueue(),
             transcriber: nil
         )
-        let edited = EnrichmentSuggestion(title: "Final", details: "Details", priority: .urgent, tag: "tag1")
+        let edited = EnrichmentSuggestion(title: "Final", details: "Details", priority: .urgent)
 
         await vm.confirm(edited)
 
@@ -124,7 +124,6 @@ final class CaptureViewModelTests: XCTestCase {
         XCTAssertEqual(clickUp.createdTasks.first?.name, "Final")
         XCTAssertEqual(clickUp.createdTasks.first?.markdownDescription, "Details")
         XCTAssertEqual(clickUp.createdTasks.first?.priority, .urgent)
-        XCTAssertEqual(clickUp.createdTasks.first?.tags, ["tag1"])
         XCTAssertNil(vm.review)
     }
 
@@ -315,7 +314,6 @@ private final class MockClickUp: ClickUpClienting, @unchecked Sendable {
         let name: String
         let markdownDescription: String?
         let priority: Priority?
-        let tags: [String]
     }
 
     var createdTasks: [CreatedTask] = []
@@ -336,8 +334,7 @@ private final class MockClickUp: ClickUpClienting, @unchecked Sendable {
         listID: String,
         name: String,
         markdownDescription: String?,
-        priority: Priority?,
-        tags: [String]
+        priority: Priority?
     ) async throws {
         if let createError { throw createError }
         createdTasks.append(
@@ -345,8 +342,7 @@ private final class MockClickUp: ClickUpClienting, @unchecked Sendable {
                 listID: listID,
                 name: name,
                 markdownDescription: markdownDescription,
-                priority: priority,
-                tags: tags
+                priority: priority
             )
         )
     }
@@ -378,6 +374,15 @@ private final class MockEnrichment: EnrichmentServicing, @unchecked Sendable {
     ) async throws -> EnrichmentSuggestion {
         if let error { throw error }
         return result
+    }
+
+    func enrichNote(
+        _ rawText: String,
+        using kind: EnrichmentProviderKind,
+        openRouterModel: String
+    ) async throws -> NoteSuggestion {
+        if let error { throw error }
+        return NoteSuggestion(title: result.title, body: result.details ?? result.title)
     }
 }
 

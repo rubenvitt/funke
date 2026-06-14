@@ -9,13 +9,10 @@ struct EnrichmentSuggestion: Equatable, Sendable {
     var details: String?
     /// Vorgeschlagene Priorität.
     var priority: Priority
-    /// Optionaler Tag-Name.
-    var tag: String?
 
-    init(title: String, details: String? = nil, priority: Priority = .normal, tag: String? = nil) {
+    init(title: String, details: String? = nil, priority: Priority = .normal) {
         self.title = title
         self.details = details
         self.priority = priority
-        self.tag = tag
     }
 }

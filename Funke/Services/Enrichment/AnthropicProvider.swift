@@ -29,6 +29,34 @@ struct AnthropicProvider: AIEnrichmentProvider {
     }
 
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion {
+        let text = try await requestText(
+            rawText: rawText,
+            systemInstruction: EnrichmentPrompt.systemInstruction,
+            schemaString: EnrichmentPrompt.jsonSchemaString
+        )
+        return try EnrichmentResponseParser.parse(text)
+    }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        let text = try await requestText(
+            rawText: rawText,
+            systemInstruction: NotePrompt.systemInstruction,
+            schemaString: NotePrompt.jsonSchemaString
+        )
+        return try NoteResponseParser.parse(text)
+    }
+
+    // MARK: - Geteilte HTTP-Maschinerie
+
+    /// Führt die Messages-Anfrage aus und liefert den ersten Text-Block.
+    /// Wird von `enrich` und `enrichNote` mit unterschiedlichem System-Prompt
+    /// und Schema geteilt; die provider-spezifische Auswertung bleibt jeweils
+    /// beim Aufrufer (Parser-Wahl).
+    private func requestText(
+        rawText: String,
+        systemInstruction: String,
+        schemaString: String
+    ) async throws -> String {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
 
@@ -36,7 +64,12 @@ struct AnthropicProvider: AIEnrichmentProvider {
             throw EnrichmentError.missingAPIKey(provider: kind.displayName)
         }
 
-        let request = try makeRequest(key: key, rawText: rawText)
+        let request = try makeRequest(
+            key: key,
+            rawText: rawText,
+            systemInstruction: systemInstruction,
+            schemaString: schemaString
+        )
 
         let data: Data
         let response: URLResponse
@@ -54,18 +87,23 @@ struct AnthropicProvider: AIEnrichmentProvider {
             throw EnrichmentError.http(status: http.statusCode, message: Self.errorMessage(from: data))
         }
 
-        return try Self.suggestion(from: data)
+        return try Self.textBlock(from: data)
     }
 
     // MARK: - Request
 
-    private func makeRequest(key: String, rawText: String) throws -> URLRequest {
-        let schema = try Self.schemaObject()
+    private func makeRequest(
+        key: String,
+        rawText: String,
+        systemInstruction: String,
+        schemaString: String
+    ) throws -> URLRequest {
+        let schema = try Self.schemaObject(from: schemaString)
 
         let body: [String: Any] = [
             "model": model,
             "max_tokens": Self.maxTokens,
-            "system": EnrichmentPrompt.systemInstruction,
+            "system": systemInstruction,
             "messages": [
                 ["role": "user", "content": rawText]
             ],
@@ -93,9 +131,9 @@ struct AnthropicProvider: AIEnrichmentProvider {
         return request
     }
 
-    /// Schält das geteilte JSON-Schema in ein eingebettetes JSON-Objekt.
-    private static func schemaObject() throws -> [String: Any] {
-        guard let schemaData = EnrichmentPrompt.jsonSchemaString.data(using: .utf8) else {
+    /// Schält ein JSON-Schema (als String) in ein eingebettetes JSON-Objekt.
+    private static func schemaObject(from schemaString: String) throws -> [String: Any] {
+        guard let schemaData = schemaString.data(using: .utf8) else {
             throw EnrichmentError.invalidResponse("JSON-Schema konnte nicht kodiert werden.")
         }
         let object: Any
@@ -121,7 +159,8 @@ struct AnthropicProvider: AIEnrichmentProvider {
         let stop_reason: String?
     }
 
-    private static func suggestion(from data: Data) throws -> EnrichmentSuggestion {
+    /// Liest den ersten Text-Block; prüft `stop_reason == "refusal"`.
+    private static func textBlock(from data: Data) throws -> String {
         let decoded: MessagesResponse
         do {
             decoded = try JSONDecoder().decode(MessagesResponse.self, from: data)
@@ -137,7 +176,7 @@ struct AnthropicProvider: AIEnrichmentProvider {
             throw EnrichmentError.invalidResponse("Keine Textantwort im Ergebnis.")
         }
 
-        return try EnrichmentResponseParser.parse(text)
+        return text
     }
 
     /// Liest `{"error":{"message":...}}` aus dem Fehlerkörper; sonst `nil`.

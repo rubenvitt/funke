@@ -57,6 +57,8 @@ protocol AIEnrichmentProvider: Sendable {
     var kind: EnrichmentProviderKind { get }
     func availability() async -> ProviderAvailability
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion
+    /// Bereinigt eine rohe Notiz zu Titel + aufgeräumtem Markdown-Body.
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion
 }
 
 /// Fasst alle Provider zusammen und wählt anhand der Einstellungen.
@@ -69,4 +71,10 @@ protocol EnrichmentServicing: Sendable {
         using kind: EnrichmentProviderKind,
         openRouterModel: String
     ) async throws -> EnrichmentSuggestion
+    /// Bereinigt eine rohe Notiz über den gewählten Provider.
+    func enrichNote(
+        _ rawText: String,
+        using kind: EnrichmentProviderKind,
+        openRouterModel: String
+    ) async throws -> NoteSuggestion
 }

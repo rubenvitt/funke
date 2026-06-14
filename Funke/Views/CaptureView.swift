@@ -36,13 +36,23 @@ struct CaptureView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                // Tippen auf den leeren Hintergrund schließt die Tastatur,
+                // ohne zu erfassen — so bleibt die TabView-Leiste erreichbar.
                 Spacer()
-
-                controls
+                    .contentShape(Rectangle())
+                    .onTapGesture { isTextFocused = false }
             }
             .padding()
             .navigationTitle("Erfassen")
             .navigationBarTitleDisplayMode(.inline)
+            // Steuerleiste sitzt ÜBER der Tastatur und bleibt erreichbar, ohne
+            // dass der Nutzer abschicken muss, um an die TabView-Leiste zu kommen.
+            .safeAreaInset(edge: .bottom) {
+                controls
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .background(.bar)
+            }
             .task {
                 await viewModel.refreshPendingCount()
                 await viewModel.flushQueue()
@@ -88,42 +98,74 @@ struct CaptureView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 12) {
-            Button {
-                Task { await viewModel.toggleRecording() }
-            } label: {
-                Image(systemName: viewModel.isRecording ? "mic.fill" : "mic")
-                    .font(.title2)
-                    .frame(width: 52, height: 52)
-                    .background(
-                        Circle().fill(
-                            viewModel.isRecording
-                                ? Color.red.opacity(0.2)
-                                : Color(.secondarySystemBackground)
-                        )
-                    )
-                    .foregroundStyle(viewModel.isRecording ? .red : .primary)
-            }
-            .accessibilityLabel(viewModel.isRecording ? "Aufnahme stoppen" : "Aufnahme starten")
-
-            Button {
-                isTextFocused = false
-                Task { await viewModel.capture() }
-            } label: {
-                HStack {
-                    if viewModel.isWorking {
-                        ProgressView()
-                    }
-                    Text("Erfassen")
-                        .fontWeight(.semibold)
+        VStack(spacing: 12) {
+            Picker("", selection: $viewModel.mode) {
+                ForEach(CaptureViewModel.CaptureMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
                 }
-                .frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(
-                viewModel.isWorking ||
-                viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: 12) {
+                Button {
+                    Task { await viewModel.toggleRecording() }
+                } label: {
+                    Image(systemName: viewModel.isRecording ? "mic.fill" : "mic")
+                        .font(.title2)
+                        .frame(width: 52, height: 52)
+                        .background(
+                            Circle().fill(
+                                viewModel.isRecording
+                                    ? Color.red.opacity(0.2)
+                                    : Color(.secondarySystemBackground)
+                            )
+                        )
+                        .foregroundStyle(viewModel.isRecording ? .red : .primary)
+                }
+                .accessibilityLabel(viewModel.isRecording ? "Aufnahme stoppen" : "Aufnahme starten")
+
+                Button {
+                    isTextFocused = false
+                    Task { await viewModel.capture() }
+                } label: {
+                    HStack {
+                        if viewModel.isWorking {
+                            ProgressView()
+                        }
+                        Text(captureButtonTitle)
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    viewModel.isWorking ||
+                    viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+
+                // Tastatur einklappen, ohne zu erfassen — gibt die TabView-Leiste frei.
+                Button {
+                    isTextFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.title2)
+                        .frame(width: 52, height: 52)
+                        .background(
+                            Circle().fill(Color(.secondarySystemBackground))
+                        )
+                        .foregroundStyle(.primary)
+                }
+                .accessibilityLabel("Tastatur schließen")
+            }
+        }
+    }
+
+    /// Beschriftung des Haupt-Buttons je nach Erfassungsmodus.
+    private var captureButtonTitle: String {
+        switch viewModel.mode {
+        case .task: return "Erfassen"
+        case .note: return "Notiz speichern"
         }
     }
 

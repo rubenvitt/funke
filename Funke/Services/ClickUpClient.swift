@@ -65,14 +65,12 @@ struct ClickUpClient: ClickUpClienting {
         listID: String,
         name: String,
         markdownDescription: String?,
-        priority: Priority?,
-        tags: [String]
+        priority: Priority?
     ) async throws {
         let body = CreateTaskBody(
             name: name,
             markdown_content: markdownDescription,
-            priority: priority?.clickUpValue,
-            tags: tags
+            priority: priority?.clickUpValue
         )
         try await send(path: "/list/\(listID)/task", method: "POST", body: body)
     }
@@ -316,7 +314,6 @@ private struct CreateTaskBody: Encodable {
     let name: String
     let markdown_content: String?
     let priority: Int?
-    let tags: [String]
 }
 
 /// Body für `PUT /task/{task_id}`.

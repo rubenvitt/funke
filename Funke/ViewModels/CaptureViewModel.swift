@@ -14,6 +14,22 @@ final class CaptureViewModel: ObservableObject {
         case failure(String)
     }
 
+    /// Was die Schnellerfassung anlegt: einen ClickUp-Task oder eine Obsidian-Notiz.
+    enum CaptureMode: String, CaseIterable, Identifiable {
+        case task
+        case note
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .task: return "Task"
+            case .note: return "Notiz"
+            }
+        }
+    }
+
+    @Published var mode: CaptureMode = .task
     @Published var text: String = ""
     @Published var isRecording: Bool = false
     @Published var isWorking: Bool = false
@@ -29,6 +45,9 @@ final class CaptureViewModel: ObservableObject {
     private let queue: OfflineQueuing
     private let transcriber: (any SpeechTranscribing)?
     private let onHaptic: @MainActor (HapticFeedback) -> Void
+    /// Öffnet eine URL (z. B. `obsidian://…`); liefert `true` bei Erfolg.
+    /// Injiziert vom Composition-Root, damit das ViewModel UIKit-frei bleibt.
+    private let openURL: @MainActor (URL) async -> Bool
     /// Verhindert paralleles/doppeltes Nachsenden (z. B. App-Start + View-Task).
     private var isFlushing = false
 
@@ -38,7 +57,8 @@ final class CaptureViewModel: ObservableObject {
         settings: AppSettings,
         queue: OfflineQueuing,
         transcriber: (any SpeechTranscribing)?,
-        onHaptic: @escaping @MainActor (HapticFeedback) -> Void = { _ in }
+        onHaptic: @escaping @MainActor (HapticFeedback) -> Void = { _ in },
+        openURL: @escaping @MainActor (URL) async -> Bool = { _ in false }
     ) {
         self.clickUp = clickUp
         self.enrichment = enrichment
@@ -46,6 +66,7 @@ final class CaptureViewModel: ObservableObject {
         self.queue = queue
         self.transcriber = transcriber
         self.onHaptic = onHaptic
+        self.openURL = openURL
     }
 
     // MARK: - Erfassen
@@ -54,6 +75,12 @@ final class CaptureViewModel: ObservableObject {
     /// KI an + Provider verfügbar → veredeln und Review zeigen.
     /// Sonst (oder bei KI-Fehler) → roh anlegen bzw. puffern.
     func capture() async {
+        // Notiz-Modus zweigt komplett ab: keine KI-Veredelung, kein Puffern.
+        if mode == .note {
+            await captureNote()
+            return
+        }
+
         let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return }
 
@@ -89,8 +116,7 @@ final class CaptureViewModel: ObservableObject {
         await createOrQueue(
             name: raw,
             markdownDescription: nil,
-            priority: nil,
-            tags: []
+            priority: nil
         )
     }
 
@@ -102,12 +128,10 @@ final class CaptureViewModel: ObservableObject {
             return
         }
         review = nil
-        let tags = edited.tag.map { [$0] } ?? []
         await createOrQueue(
             name: name,
             markdownDescription: edited.details,
-            priority: edited.priority,
-            tags: tags
+            priority: edited.priority
         )
     }
 
@@ -116,13 +140,88 @@ final class CaptureViewModel: ObservableObject {
         review = nil
     }
 
+    // MARK: - Notiz an Obsidian
+
+    /// Sendet den rohen Text als Notiz an Obsidian (`obsidian://`-URL-Schema).
+    ///
+    /// Grundsatz: **Notizen werden nie gepuffert.** Bei jedem Fehler bleibt der
+    /// Text erhalten, damit kein Inhalt verloren geht — geleert wird nur bei Erfolg.
+    private func captureNote() async {
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+
+        banner = nil
+
+        let config = settings.obsidianConfig
+        guard !config.vault.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            onHaptic(.error)
+            banner = .failure(ObsidianError.missingVault.errorDescription ?? "Kein Obsidian-Vault hinterlegt.")
+            return
+        }
+
+        // KI an + Provider verfügbar → Rohnotiz „direkt mit KI" bereinigen.
+        // KI ist nie blockierend: scheitert die Bereinigung, geht die Rohnotiz raus.
+        let draft: NoteDraft
+        if settings.enrichmentEnabled,
+           await enrichment.availability(for: settings.activeProvider).isAvailable {
+            isWorking = true
+            do {
+                let suggestion = try await enrichment.enrichNote(
+                    raw,
+                    using: settings.activeProvider,
+                    openRouterModel: settings.openRouterModel
+                )
+                draft = NoteDraft(title: suggestion.title, body: suggestion.body, createdAt: Date())
+            } catch {
+                // KI nie blockierend: Rohnotiz senden.
+                draft = NoteDraft(title: Self.noteTitle(from: raw), body: raw, createdAt: Date())
+            }
+            isWorking = false
+        } else {
+            draft = NoteDraft(title: Self.noteTitle(from: raw), body: raw, createdAt: Date())
+        }
+
+        let url: URL
+        do {
+            url = try ObsidianURLBuilder.url(for: draft, config: config)
+        } catch {
+            onHaptic(.error)
+            banner = .failure(Self.message(from: error))
+            return
+        }
+
+        let ok = await openURL(url)
+        if ok {
+            text = ""
+            banner = .success("Notiz an Obsidian gesendet.")
+            onHaptic(.success)
+        } else {
+            onHaptic(.error)
+            banner = .failure(ObsidianError.couldNotOpen.errorDescription ?? "Obsidian konnte nicht geöffnet werden. Ist die App installiert?")
+        }
+    }
+
+    /// Leitet einen knappen Titel aus dem Roh-Text ab:
+    /// erste Zeile, sonst die ersten ~6 Wörter.
+    private static func noteTitle(from text: String) -> String {
+        let firstLine = text
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !firstLine.isEmpty {
+            return firstLine
+        }
+        let words = text.split(whereSeparator: { $0.isWhitespace }).prefix(6)
+        return words.joined(separator: " ")
+    }
+
     // MARK: - Anlegen / Puffern
 
     private func createOrQueue(
         name: String,
         markdownDescription: String?,
-        priority: Priority?,
-        tags: [String]
+        priority: Priority?
     ) async {
         guard let listID = settings.inboxListID, !listID.isEmpty else {
             onHaptic(.warning)
@@ -138,8 +237,7 @@ final class CaptureViewModel: ObservableObject {
                 listID: listID,
                 name: name,
                 markdownDescription: markdownDescription,
-                priority: priority,
-                tags: tags
+                priority: priority
             )
             text = ""
             banner = .success("Aufgabe angelegt.")
@@ -151,8 +249,7 @@ final class CaptureViewModel: ObservableObject {
                 await enqueueFallback(
                     name: name,
                     markdownDescription: markdownDescription,
-                    priority: priority,
-                    tags: tags
+                    priority: priority
                 )
             default:
                 onHaptic(.error)
@@ -167,14 +264,12 @@ final class CaptureViewModel: ObservableObject {
     private func enqueueFallback(
         name: String,
         markdownDescription: String?,
-        priority: Priority?,
-        tags: [String]
+        priority: Priority?
     ) async {
         let pending = PendingCapture(
             name: name,
             markdownDescription: markdownDescription,
-            priority: priority,
-            tags: tags
+            priority: priority
         )
         do {
             try await queue.enqueue(pending)
@@ -219,8 +314,7 @@ final class CaptureViewModel: ObservableObject {
                     listID: listID,
                     name: item.name,
                     markdownDescription: item.markdownDescription,
-                    priority: item.priority,
-                    tags: item.tags
+                    priority: item.priority
                 )
                 try await queue.remove(id: item.id)
             } catch let error as ClickUpError {

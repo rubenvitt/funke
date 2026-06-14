@@ -17,8 +17,7 @@ protocol ClickUpClienting: Sendable {
         listID: String,
         name: String,
         markdownDescription: String?,
-        priority: Priority?,
-        tags: [String]
+        priority: Priority?
     ) async throws
 
     /// Heute fällige / überfällige, offene, mir zugewiesene Aufgaben.

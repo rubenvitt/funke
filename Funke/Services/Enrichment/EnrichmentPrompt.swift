@@ -10,7 +10,7 @@ enum EnrichmentPrompt {
     Antworte AUSSCHLIESSLICH mit einem einzigen JSON-Objekt – ohne Erklärung, \
     ohne Markdown-Codeblock – in genau dieser Form:
     {"title": "<knapper Titel>", "details": "<optionale Beschreibung oder leer>", \
-    "priority": "urgent|high|normal|low", "tag": "<optionaler Tag oder leer>"}
+    "priority": "urgent|high|normal|low"}
     Wähle die Priorität konservativ; im Zweifel "normal". Antworte auf Deutsch, \
     falls die Eingabe deutsch ist. Bei sehr kurzer Eingabe nimm sie als Titel.
     """
@@ -24,10 +24,9 @@ enum EnrichmentPrompt {
       "properties": {
         "title": { "type": "string" },
         "details": { "type": "string" },
-        "priority": { "type": "string", "enum": ["urgent", "high", "normal", "low"] },
-        "tag": { "type": "string" }
+        "priority": { "type": "string", "enum": ["urgent", "high", "normal", "low"] }
       },
-      "required": ["title", "details", "priority", "tag"]
+      "required": ["title", "details", "priority"]
     }
     """
 
@@ -44,7 +43,6 @@ enum EnrichmentResponseParser {
         let details: String?
         let description: String?
         let priority: String?
-        let tag: String?
     }
 
     /// Schält das erste vollständige JSON-Objekt aus einem String.
@@ -85,8 +83,7 @@ enum EnrichmentResponseParser {
         return EnrichmentSuggestion(
             title: title,
             details: Self.nonEmpty(decoded.details ?? decoded.description),
-            priority: priority,
-            tag: Self.nonEmpty(decoded.tag)
+            priority: priority
         )
     }
 

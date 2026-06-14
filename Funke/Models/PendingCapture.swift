@@ -7,7 +7,6 @@ struct PendingCapture: Codable, Equatable, Sendable, Identifiable {
     let name: String
     let markdownDescription: String?
     let priority: Priority?
-    let tags: [String]
     let createdAt: Date
 
     init(
@@ -15,14 +14,12 @@ struct PendingCapture: Codable, Equatable, Sendable, Identifiable {
         name: String,
         markdownDescription: String? = nil,
         priority: Priority? = nil,
-        tags: [String] = [],
         createdAt: Date = Date()
     ) {
         self.id = id
         self.name = name
         self.markdownDescription = markdownDescription
         self.priority = priority
-        self.tags = tags
         self.createdAt = createdAt
     }
 }

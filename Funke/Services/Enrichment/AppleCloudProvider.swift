@@ -43,6 +43,20 @@ struct AppleCloudProvider: AIEnrichmentProvider {
             throw AppleModelSupport.map(error)
         }
     }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
+
+        let model = PrivateCloudComputeLanguageModel()
+        let session = LanguageModelSession(model: model, instructions: NotePrompt.systemInstruction)
+        do {
+            let response = try await session.respond(to: rawText, generating: NoteDraftGen.self)
+            return response.content.toSuggestion()
+        } catch {
+            throw AppleModelSupport.map(error)
+        }
+    }
 }
 
 #else
@@ -57,6 +71,10 @@ struct AppleCloudProvider: AIEnrichmentProvider {
     }
 
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion {
+        throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
+    }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
         throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
     }
 }

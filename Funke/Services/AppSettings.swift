@@ -12,6 +12,10 @@ final class AppSettings: ObservableObject {
         static let teamID = "teamID"
         static let inboxListID = "inboxListID"
         static let inboxListName = "inboxListName"
+        static let obsidianVault = "obsidianVault"
+        static let obsidianInboxFolder = "obsidianInboxFolder"
+        static let obsidianNoteTarget = "obsidianNoteTarget"
+        static let obsidianUseAdvancedURI = "obsidianUseAdvancedURI"
     }
 
     /// Default-OpenRouter-Modell (günstig/schnell für Klassifikation,
@@ -39,6 +43,25 @@ final class AppSettings: ObservableObject {
         didSet { Self.write(inboxListName, Keys.inboxListName, defaults) }
     }
 
+    // MARK: - Obsidian (Notiz-Erfassung)
+
+    /// Name des Obsidian-Vaults (leer = nicht konfiguriert).
+    @Published var obsidianVault: String {
+        didSet { defaults.set(obsidianVault, forKey: Keys.obsidianVault) }
+    }
+    /// Vault-relativer Ordner für neue Notizen.
+    @Published var obsidianInboxFolder: String {
+        didSet { defaults.set(obsidianInboxFolder, forKey: Keys.obsidianInboxFolder) }
+    }
+    /// Ziel neuer Notizen (neue Datei oder Tagesnotiz).
+    @Published var obsidianNoteTarget: ObsidianNoteTarget {
+        didSet { defaults.set(obsidianNoteTarget.rawValue, forKey: Keys.obsidianNoteTarget) }
+    }
+    /// Ob für die Tagesnotiz das Advanced-URI-Plugin genutzt werden soll.
+    @Published var obsidianUseAdvancedURI: Bool {
+        didSet { defaults.set(obsidianUseAdvancedURI, forKey: Keys.obsidianUseAdvancedURI) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.enrichmentEnabled = defaults.bool(forKey: Keys.enrichmentEnabled)
@@ -48,12 +71,27 @@ final class AppSettings: ObservableObject {
         self.teamID = defaults.string(forKey: Keys.teamID)
         self.inboxListID = defaults.string(forKey: Keys.inboxListID)
         self.inboxListName = defaults.string(forKey: Keys.inboxListName)
+        self.obsidianVault = defaults.string(forKey: Keys.obsidianVault) ?? ""
+        self.obsidianInboxFolder = defaults.string(forKey: Keys.obsidianInboxFolder) ?? "Inbox"
+        self.obsidianNoteTarget = ObsidianNoteTarget(rawValue: defaults.string(forKey: Keys.obsidianNoteTarget) ?? "")
+            ?? .inboxFile
+        self.obsidianUseAdvancedURI = defaults.bool(forKey: Keys.obsidianUseAdvancedURI)
     }
 
     /// True, sobald eine Inbox-Liste gewählt wurde.
     var isInboxConfigured: Bool {
         guard let inboxListID, !inboxListID.isEmpty else { return false }
         return true
+    }
+
+    /// Aktuelle Obsidian-Konfiguration als Wertobjekt für den `ObsidianURLBuilder`.
+    var obsidianConfig: ObsidianConfig {
+        ObsidianConfig(
+            vault: obsidianVault,
+            inboxFolder: obsidianInboxFolder,
+            target: obsidianNoteTarget,
+            useAdvancedURI: obsidianUseAdvancedURI
+        )
     }
 
     private static func write(_ value: String?, _ key: String, _ defaults: UserDefaults) {

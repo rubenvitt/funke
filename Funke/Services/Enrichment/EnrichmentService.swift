@@ -87,6 +87,39 @@ struct EnrichmentService: EnrichmentServicing {
         }
     }
 
+    func enrichNote(
+        _ rawText: String,
+        using kind: EnrichmentProviderKind,
+        openRouterModel: String
+    ) async throws -> NoteSuggestion {
+        switch kind {
+        case .anthropic:
+            return try await anthropicProvider().enrichNote(rawText)
+        case .openRouter:
+            return try await openRouterProvider(model: openRouterModel).enrichNote(rawText)
+        case .appleOnDevice:
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, macOS 26.0, *) {
+                return try await AppleOnDeviceProvider().enrichNote(rawText)
+            } else {
+                throw EnrichmentError.providerUnavailable("Apple On-Device benötigt iOS 26 oder neuer.")
+            }
+            #else
+            return try await AppleOnDeviceProvider().enrichNote(rawText)
+            #endif
+        case .appleCloud:
+            #if canImport(FoundationModels)
+            if #available(iOS 27.0, macOS 27.0, *) {
+                return try await AppleCloudProvider().enrichNote(rawText)
+            } else {
+                throw EnrichmentError.providerUnavailable("Apple Cloud benötigt iOS 27 oder neuer.")
+            }
+            #else
+            return try await AppleCloudProvider().enrichNote(rawText)
+            #endif
+        }
+    }
+
     // MARK: - Provider-Aufbau
 
     private func anthropicProvider() -> AnthropicProvider {

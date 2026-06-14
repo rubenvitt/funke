@@ -21,44 +21,41 @@ final class EnrichmentTests: XCTestCase {
     // MARK: - EnrichmentResponseParser
 
     func testParserCleanJSON() throws {
-        let raw = #"{"title": "Müll rausbringen", "details": "Dienstagabend", "priority": "high", "tag": "Haushalt"}"#
+        let raw = #"{"title": "Müll rausbringen", "details": "Dienstagabend", "priority": "high"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Müll rausbringen")
         XCTAssertEqual(suggestion.details, "Dienstagabend")
         XCTAssertEqual(suggestion.priority, .high)
-        XCTAssertEqual(suggestion.tag, "Haushalt")
     }
 
     func testParserCodeFences() throws {
         let raw = """
         ```json
-        {"title": "Bericht schreiben", "details": "", "priority": "normal", "tag": ""}
+        {"title": "Bericht schreiben", "details": "", "priority": "normal"}
         ```
         """
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Bericht schreiben")
         // Leere Strings → nil
         XCTAssertNil(suggestion.details)
-        XCTAssertNil(suggestion.tag)
         XCTAssertEqual(suggestion.priority, .normal)
     }
 
     func testParserSurroundingProse() throws {
         let raw = """
         Hier ist deine Aufgabe:
-        {"title": "Arzttermin", "details": "Hausarzt anrufen", "priority": "urgent", "tag": "Gesundheit"}
+        {"title": "Arzttermin", "details": "Hausarzt anrufen", "priority": "urgent"}
         Viel Erfolg!
         """
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Arzttermin")
         XCTAssertEqual(suggestion.details, "Hausarzt anrufen")
         XCTAssertEqual(suggestion.priority, .urgent)
-        XCTAssertEqual(suggestion.tag, "Gesundheit")
     }
 
     func testParserDescriptionKeyAlias() throws {
         // „description" wird als Alias für „details" akzeptiert.
-        let raw = #"{"title": "Einkaufen", "description": "Milch und Brot", "priority": "low", "tag": ""}"#
+        let raw = #"{"title": "Einkaufen", "description": "Milch und Brot", "priority": "low"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Einkaufen")
         XCTAssertEqual(suggestion.details, "Milch und Brot")
@@ -66,7 +63,7 @@ final class EnrichmentTests: XCTestCase {
     }
 
     func testParserMissingTitleThrows() {
-        let raw = #"{"details": "Etwas", "priority": "normal", "tag": ""}"#
+        let raw = #"{"details": "Etwas", "priority": "normal"}"#
         XCTAssertThrowsError(try EnrichmentResponseParser.parse(raw)) { error in
             guard case EnrichmentError.invalidResponse = error else {
                 return XCTFail("Erwartete .invalidResponse, bekam \(error)")
@@ -75,7 +72,7 @@ final class EnrichmentTests: XCTestCase {
     }
 
     func testParserInvalidPriorityFallsBackToNormal() throws {
-        let raw = #"{"title": "Aufgabe", "details": "", "priority": "blubb", "tag": ""}"#
+        let raw = #"{"title": "Aufgabe", "details": "", "priority": "blubb"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.priority, .normal)
     }
@@ -284,14 +281,14 @@ final class EnrichmentTests: XCTestCase {
     }
 
     private func anthropicSuccessJSON(title: String, priority: String) -> String {
-        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\", \"tag\": \"\"}"#
+        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\"}"#
         return """
         {"content": [{"type": "text", "text": "\(inner)"}], "stop_reason": "end_turn"}
         """
     }
 
     private func openRouterSuccessJSON(title: String, priority: String) -> String {
-        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\", \"tag\": \"\"}"#
+        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\"}"#
         return """
         {"choices": [{"message": {"content": "\(inner)"}}]}
         """

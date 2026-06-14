@@ -34,6 +34,11 @@ final class SettingsViewModel: ObservableObject {
     @Published var providerAvailability: ProviderAvailability?
     @Published var isCheckingProvider: Bool = false
 
+    // MARK: - Obsidian
+
+    /// Ergebnis des Obsidian-Test-Buttons (sichtbar OK/Fehler).
+    @Published var obsidianStatus: StatusMessage?
+
     /// Sichtbare Status- bzw. Fehlermeldung mit Erfolgs-/Fehler-Kennung.
     enum StatusMessage: Equatable {
         case success(String)
@@ -212,6 +217,25 @@ final class SettingsViewModel: ObservableObject {
     /// Schaltet die KI-Veredelung an/aus.
     func setEnrichmentEnabled(_ enabled: Bool) {
         settings.enrichmentEnabled = enabled
+    }
+
+    // MARK: - Obsidian
+
+    /// Baut eine Beispiel-Notiz-URL für den Test-Button.
+    /// Wirft typisiert (`ObsidianError`), damit die View den Fehler sichtbar macht —
+    /// kein stilles `try?`.
+    func makeObsidianTestURL() throws -> URL {
+        let draft = NoteDraft(
+            title: "Funke-Test",
+            body: "Test-Notiz aus Funke.",
+            createdAt: Date()
+        )
+        return try ObsidianURLBuilder.url(for: draft, config: settings.obsidianConfig)
+    }
+
+    /// Hält das Ergebnis des Obsidian-Tests fest (sichtbarer Status).
+    func reportObsidianTest(_ status: StatusMessage) {
+        obsidianStatus = status
     }
 
     private static func message(from error: Error) -> String {

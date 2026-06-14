@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 
 /// Composition-Root: erzeugt alle konkreten Services einmalig und verdrahtet
 /// die ViewModels. Wird von `FunkeApp` als `@StateObject` gehalten, damit die
@@ -40,6 +43,13 @@ final class AppContainer: ObservableObject {
             onHaptic: { feedback in
                 #if os(iOS)
                 performHaptic(feedback)
+                #endif
+            },
+            openURL: { url in
+                #if os(iOS)
+                return await UIApplication.shared.open(url)
+                #else
+                return false
                 #endif
             }
         )

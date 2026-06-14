@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject private var settings: AppSettings
+    @Environment(\.openURL) private var openURL
 
     init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
@@ -17,6 +18,7 @@ struct SettingsView: View {
                 workspaceSection
                 inboxSection
                 aiSection
+                obsidianSection
             }
             .navigationTitle("Einstellungen")
         }
@@ -140,6 +142,55 @@ struct SettingsView: View {
             }
         }
         .task { await viewModel.checkProviderAvailability() }
+    }
+
+    // MARK: - Obsidian
+
+    private var obsidianSection: some View {
+        Section("Obsidian") {
+            TextField("Vault-Name", text: $settings.obsidianVault)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            TextField("Inbox-Ordner", text: $settings.obsidianInboxFolder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            Picker("Notiz-Ziel", selection: $settings.obsidianNoteTarget) {
+                Text("Neue Datei im Inbox-Ordner").tag(ObsidianNoteTarget.inboxFile)
+                Text("An Tagesnotiz anhängen").tag(ObsidianNoteTarget.dailyNote)
+            }
+
+            Toggle("Advanced URI verwenden", isOn: $settings.obsidianUseAdvancedURI)
+
+            Text("„An Tagesnotiz anhängen“ benötigt das Advanced-URI-Plugin in Obsidian.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Button("Test") {
+                testObsidian()
+            }
+
+            statusRow(viewModel.obsidianStatus)
+        }
+    }
+
+    /// Baut eine Beispiel-Notiz-URL und öffnet sie über die SwiftUI-Umgebung.
+    /// Fehler aus dem Builder werden sichtbar gemeldet — kein stilles Schlucken.
+    private func testObsidian() {
+        do {
+            let url = try viewModel.makeObsidianTestURL()
+            openURL(url) { accepted in
+                viewModel.reportObsidianTest(
+                    accepted
+                        ? .success("Obsidian geöffnet.")
+                        : .failure(ObsidianError.couldNotOpen.errorDescription ?? "Obsidian konnte nicht geöffnet werden.")
+                )
+            }
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            viewModel.reportObsidianTest(.failure(message))
+        }
     }
 
     // MARK: - Bindings

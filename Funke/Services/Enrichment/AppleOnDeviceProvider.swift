@@ -35,8 +35,29 @@ struct EnrichmentDraft {
     var details: String
     @Guide(description: "Priorität")
     var priority: DraftPriority
-    @Guide(description: "Ein Tag; leerer String wenn keiner")
-    var tag: String
+}
+
+/// Geteilter Notiz-Entwurf für beide Apple-Provider (On-Device + Cloud).
+@available(iOS 26.0, macOS 26.0, *)
+@Generable
+struct NoteDraftGen {
+    @Guide(description: "Knapper Titel")
+    var title: String
+    @Guide(description: "Aufgeräumter Markdown-Body")
+    var body: String
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+extension NoteDraftGen {
+    /// Wandelt den generierten Entwurf in eine Notiz um (leerer Body → Titel).
+    func toSuggestion() -> NoteSuggestion {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return NoteSuggestion(
+            title: trimmedTitle,
+            body: trimmedBody.isEmpty ? trimmedTitle : trimmedBody
+        )
+    }
 }
 
 @available(iOS 26.0, macOS 26.0, *)
@@ -46,8 +67,7 @@ extension EnrichmentDraft {
         EnrichmentSuggestion(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             details: AppleModelSupport.nonEmpty(details),
-            priority: priority.asPriority,
-            tag: AppleModelSupport.nonEmpty(tag)
+            priority: priority.asPriority
         )
     }
 }
@@ -111,6 +131,19 @@ struct AppleOnDeviceProvider: AIEnrichmentProvider {
             throw AppleModelSupport.map(error)
         }
     }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
+
+        let session = LanguageModelSession(instructions: NotePrompt.systemInstruction)
+        do {
+            let response = try await session.respond(to: rawText, generating: NoteDraftGen.self)
+            return response.content.toSuggestion()
+        } catch {
+            throw AppleModelSupport.map(error)
+        }
+    }
 }
 
 #else
@@ -125,6 +158,10 @@ struct AppleOnDeviceProvider: AIEnrichmentProvider {
     }
 
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion {
+        throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
+    }
+
+    func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
         throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
     }
 }

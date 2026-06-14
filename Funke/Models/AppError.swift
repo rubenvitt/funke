@@ -89,6 +89,24 @@ enum SpeechError: LocalizedError, Equatable {
     }
 }
 
+/// Fehler beim Versand einer Notiz an Obsidian (URL-Schema, keine Plugin-Abhängigkeit).
+enum ObsidianError: LocalizedError, Equatable {
+    case missingVault
+    case couldNotOpen
+    case invalidURL
+
+    var errorDescription: String? {
+        switch self {
+        case .missingVault:
+            return "Kein Obsidian-Vault hinterlegt. Bitte in den Einstellungen den Vault-Namen eintragen."
+        case .couldNotOpen:
+            return "Obsidian konnte nicht geöffnet werden. Ist die App installiert?"
+        case .invalidURL:
+            return "Interner Fehler: ungültige Obsidian-URL."
+        }
+    }
+}
+
 /// Fehler aus dem Keychain-Zugriff.
 enum KeychainError: LocalizedError, Equatable {
     case unexpectedStatus(Int32)
