@@ -55,6 +55,20 @@ echo "probe" > vault/Inbox/probe.md
 > nur falls dein Vault E2E-verschlüsselt ist. `SYNC_MODE` ist `bidirectional` —
 > **nicht** `mirror-remote` (das würde extern hinzugefügte Dateien wieder löschen).
 
+## CI/CD (GitHub Actions)
+
+`.github/workflows/docker.yml` baut bei Push auf `main`/`v*`-Tags das funke-relay-Image
+und pusht es nach **`ghcr.io/<dein-user>/<repo>`** (Tags: `latest`, Branch, SemVer, SHA).
+`go vet`/`go build` laufen als Test (auch bei PRs). Voraussetzung: dieser `server/`-Ordner
+ist das **Repo-Root** (Dockerfile + go.mod liegen oben).
+
+Auf dem Server dann das gepushte Image nutzen statt lokal zu bauen — in
+`docker-compose.yml` die `build: .`-Zeile durch
+`image: ghcr.io/<dein-user>/<repo>:latest` ersetzen, dann `docker compose pull && up -d`.
+
+> Das Image ist standardmäßig privat (GHCR). Damit der Server es ziehen kann, entweder
+> das Package öffentlich schalten oder `docker login ghcr.io` mit einem PAT (`read:packages`).
+
 ## Setup (manuell, ohne Docker — Alternative)
 
 `obsidian-headless` (`npm i -g obsidian-headless`, Node 22+): `ob login` →

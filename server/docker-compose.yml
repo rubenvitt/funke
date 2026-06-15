@@ -33,6 +33,8 @@ services:
       - ./config:/config
 
   funke-relay:
+    # Lokal bauen ODER das von der GH-Pipeline gepushte Image ziehen:
+    #   image: ghcr.io/<dein-user>/<repo>:latest   (build-Zeile dann entfernen)
     build: .
     container_name: funke-relay
     restart: unless-stopped
