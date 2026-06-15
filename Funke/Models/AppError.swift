@@ -89,20 +89,30 @@ enum SpeechError: LocalizedError, Equatable {
     }
 }
 
-/// Fehler beim Versand einer Notiz an Obsidian (URL-Schema, keine Plugin-Abhängigkeit).
-enum ObsidianError: LocalizedError, Equatable {
-    case missingVault
-    case couldNotOpen
-    case invalidURL
+/// Fehler beim Schreiben einer Notiz über einen `NoteSink` (Server-Relay oder
+/// lokales Dateisystem). `transport` signalisiert „später erneut" (Offline-Queue).
+enum NoteSinkError: LocalizedError, Equatable {
+    case notConfigured(String)
+    case transport(String)
+    case http(status: Int, message: String?)
+    case fileSystem(String)
+    case invalidResponse(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingVault:
-            return "Kein Obsidian-Vault hinterlegt. Bitte in den Einstellungen den Vault-Namen eintragen."
-        case .couldNotOpen:
-            return "Obsidian konnte nicht geöffnet werden. Ist die App installiert?"
-        case .invalidURL:
-            return "Interner Fehler: ungültige Obsidian-URL."
+        case .notConfigured(let what):
+            return "Notiz-Ziel nicht eingerichtet: \(what)."
+        case .transport(let message):
+            return "Netzwerkfehler beim Senden der Notiz: \(message)"
+        case .http(let status, let message):
+            if let message, !message.isEmpty {
+                return "Relay-Fehler (\(status)): \(message)"
+            }
+            return "Relay-Fehler (HTTP \(status))."
+        case .fileSystem(let message):
+            return "Notiz konnte nicht gespeichert werden: \(message)"
+        case .invalidResponse(let detail):
+            return "Unerwartete Antwort vom Relay-Server: \(detail)"
         }
     }
 }

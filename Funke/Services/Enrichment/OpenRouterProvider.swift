@@ -49,6 +49,16 @@ struct OpenRouterProvider: AIEnrichmentProvider {
         return try NoteResponseParser.parse(content)
     }
 
+    func classify(_ rawText: String) async throws -> CaptureClassification {
+        let content = try await requestText(
+            rawText: rawText,
+            systemInstruction: ClassifyPrompt.systemInstruction,
+            schemaString: ClassifyPrompt.jsonSchemaString,
+            schemaName: "classification"
+        )
+        return try ClassifyResponseParser.parse(content)
+    }
+
     // MARK: - Geteilte HTTP-Maschinerie
 
     /// Führt die Chat-Completions-Anfrage aus und liefert den Content-String der

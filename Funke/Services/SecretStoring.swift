@@ -5,6 +5,8 @@ enum SecretKey: String, CaseIterable, Sendable {
     case clickUpToken = "clickup_token"
     case anthropicKey = "anthropic_key"
     case openRouterKey = "openrouter_key"
+    /// Bearer-Token für den Funke-Relay-Server (Notiz-Transport).
+    case relayToken = "relay_token"
 }
 
 /// Abstraktion über den sicheren Geheimnis-Speicher (Keychain).

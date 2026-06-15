@@ -57,6 +57,20 @@ struct AppleCloudProvider: AIEnrichmentProvider {
             throw AppleModelSupport.map(error)
         }
     }
+
+    func classify(_ rawText: String) async throws -> CaptureClassification {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
+
+        let model = PrivateCloudComputeLanguageModel()
+        let session = LanguageModelSession(model: model, instructions: ClassifyPrompt.systemInstruction)
+        do {
+            let response = try await session.respond(to: rawText, generating: ClassifyDraft.self)
+            return response.content.toClassification()
+        } catch {
+            throw AppleModelSupport.map(error)
+        }
+    }
 }
 
 #else
@@ -75,6 +89,10 @@ struct AppleCloudProvider: AIEnrichmentProvider {
     }
 
     func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
+    }
+
+    func classify(_ rawText: String) async throws -> CaptureClassification {
         throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
     }
 }

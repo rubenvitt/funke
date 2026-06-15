@@ -28,3 +28,6 @@ xcuserdata/
 Secrets.plist
 secrets.json
 .env
+
+# Lokales swiftc-Verifikations-Harness (macOS-CLT, kein iOS-SDK)
+.verify/

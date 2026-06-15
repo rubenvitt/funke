@@ -1,10 +1,11 @@
 import Foundation
 
-/// Persistente Offline-Queue für noch nicht gesendete Captures.
-/// Speichert `[PendingCapture]` als JSON unter `directory/queue.json`.
+/// Persistente Offline-Queue für noch nicht gesendete Captures (Tasks + Notizen).
+/// Speichert `[PendingItem]` als JSON unter `directory/queue.json`.
 /// Als `actor` ausgelegt, damit gleichzeitige Zugriffe serialisiert sind.
 /// IO-Fehler werden sichtbar gemacht (kein stiller Verlust); eine fehlende
-/// Datei gilt als leere Queue.
+/// Datei gilt als leere Queue. Alte reine `[PendingCapture]`-Dateien (vor v2)
+/// werden beim ersten Laden transparent zu `.task`-Items migriert.
 actor OfflineQueue: OfflineQueuing {
     private let directory: URL
     private let fileURL: URL
@@ -12,7 +13,7 @@ actor OfflineQueue: OfflineQueuing {
     private let decoder: JSONDecoder
 
     /// In-Memory-Cache; `nil` bedeutet „noch nicht von Platte geladen".
-    private var cached: [PendingCapture]?
+    private var cached: [PendingItem]?
 
     init(directory: URL = OfflineQueue.defaultDirectory) {
         self.directory = directory
@@ -37,13 +38,13 @@ actor OfflineQueue: OfflineQueuing {
 
     // MARK: - OfflineQueuing
 
-    func enqueue(_ capture: PendingCapture) async throws {
+    func enqueue(_ item: PendingItem) async throws {
         var items = try loaded()
-        items.append(capture)
+        items.append(item)
         try persist(items)
     }
 
-    func all() async -> [PendingCapture] {
+    func all() async -> [PendingItem] {
         // `all()` ist nicht-werfend (Protokoll): ein Lese-IO-Fehler darf hier
         // nicht crashen. Im Fehlerfall liefern wir den bekannten Cache bzw. leer.
         if let cached { return cached }
@@ -67,7 +68,9 @@ actor OfflineQueue: OfflineQueuing {
     // MARK: - Persistence
 
     /// Lädt die Queue lazy von Platte. Fehlende Datei → leere Queue.
-    private func loaded() throws -> [PendingCapture] {
+    /// Migration: schlägt das neue `[PendingItem]`-Format fehl, wird die alte
+    /// reine `[PendingCapture]`-Datei gelesen und als `.task`-Items übernommen.
+    private func loaded() throws -> [PendingItem] {
         if let cached { return cached }
 
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -80,12 +83,21 @@ actor OfflineQueue: OfflineQueuing {
             cached = []
             return []
         }
-        let items = try decoder.decode([PendingCapture].self, from: data)
-        cached = items
-        return items
+
+        if let items = try? decoder.decode([PendingItem].self, from: data) {
+            cached = items
+            return items
+        }
+
+        // Migration vom Vor-v2-Format: reines [PendingCapture].
+        let legacy = try decoder.decode([PendingCapture].self, from: data)
+        let migrated = legacy.map { PendingItem.task($0) }
+        cached = migrated
+        try persist(migrated)
+        return migrated
     }
 
-    private func persist(_ items: [PendingCapture]) throws {
+    private func persist(_ items: [PendingItem]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(items)
         try data.write(to: fileURL, options: [.atomic])

@@ -72,6 +72,48 @@ extension EnrichmentDraft {
     }
 }
 
+/// Geteiltes Klassifikations-Ergebnis (Task vs. Notiz) für beide Apple-Provider.
+@available(iOS 26.0, macOS 26.0, *)
+@Generable
+enum CaptureKindGen {
+    case task, note
+
+    var asKind: CaptureKind {
+        switch self {
+        case .task: return .task
+        case .note: return .note
+        }
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+@Generable
+struct ClassifyDraft {
+    @Guide(description: "task = umsetzbare Aufgabe/To-do (oft mit Verb); note = reine Information/Gedanke ohne Handlung")
+    var kind: CaptureKindGen
+    @Guide(description: "Knapper Titel")
+    var title: String
+    @Guide(description: "Aufgeräumter Body; bei Notizen der ausgearbeitete Inhalt")
+    var body: String
+    @Guide(description: "Priorität (nur für Aufgaben relevant; bei Notizen normal)")
+    var priority: DraftPriority
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+extension ClassifyDraft {
+    /// Wandelt den generierten Entwurf in eine Klassifikation um (leerer Body → Titel).
+    func toClassification() -> CaptureClassification {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return CaptureClassification(
+            kind: kind.asKind,
+            title: trimmedTitle,
+            body: trimmedBody.isEmpty ? trimmedTitle : trimmedBody,
+            priority: priority.asPriority
+        )
+    }
+}
+
 // MARK: - Gemeinsame Helfer für beide Apple-Provider
 
 @available(iOS 26.0, macOS 26.0, *)
@@ -144,6 +186,19 @@ struct AppleOnDeviceProvider: AIEnrichmentProvider {
             throw AppleModelSupport.map(error)
         }
     }
+
+    func classify(_ rawText: String) async throws -> CaptureClassification {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw EnrichmentError.emptyInput }
+
+        let session = LanguageModelSession(instructions: ClassifyPrompt.systemInstruction)
+        do {
+            let response = try await session.respond(to: rawText, generating: ClassifyDraft.self)
+            return response.content.toClassification()
+        } catch {
+            throw AppleModelSupport.map(error)
+        }
+    }
 }
 
 #else
@@ -162,6 +217,10 @@ struct AppleOnDeviceProvider: AIEnrichmentProvider {
     }
 
     func enrichNote(_ rawText: String) async throws -> NoteSuggestion {
+        throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
+    }
+
+    func classify(_ rawText: String) async throws -> CaptureClassification {
         throw EnrichmentError.providerUnavailable("FoundationModels nicht verfügbar")
     }
 }

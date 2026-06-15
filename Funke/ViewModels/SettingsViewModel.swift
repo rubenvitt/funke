@@ -34,10 +34,12 @@ final class SettingsViewModel: ObservableObject {
     @Published var providerAvailability: ProviderAvailability?
     @Published var isCheckingProvider: Bool = false
 
-    // MARK: - Obsidian
+    // MARK: - Relay (Notiz-Transport)
 
-    /// Ergebnis des Obsidian-Test-Buttons (sichtbar OK/Fehler).
-    @Published var obsidianStatus: StatusMessage?
+    /// Spiegel des im Keychain hinterlegten Relay-Tokens (zur Bearbeitung im Feld).
+    @Published var relayToken: String = ""
+    @Published var relayStatus: StatusMessage?
+    @Published var isTestingRelay: Bool = false
 
     /// Sichtbare Status- bzw. Fehlermeldung mit Erfolgs-/Fehler-Kennung.
     enum StatusMessage: Equatable {
@@ -66,6 +68,7 @@ final class SettingsViewModel: ObservableObject {
         self.clickUpToken = secrets.string(for: .clickUpToken) ?? ""
         self.anthropicKey = secrets.string(for: .anthropicKey) ?? ""
         self.openRouterKey = secrets.string(for: .openRouterKey) ?? ""
+        self.relayToken = secrets.string(for: .relayToken) ?? ""
     }
 
     // MARK: - Token / Schlüssel speichern
@@ -219,23 +222,47 @@ final class SettingsViewModel: ObservableObject {
         settings.enrichmentEnabled = enabled
     }
 
-    // MARK: - Obsidian
+    // MARK: - Relay (Notiz-Transport)
 
-    /// Baut eine Beispiel-Notiz-URL für den Test-Button.
-    /// Wirft typisiert (`ObsidianError`), damit die View den Fehler sichtbar macht —
-    /// kein stilles `try?`.
-    func makeObsidianTestURL() throws -> URL {
-        let draft = NoteDraft(
-            title: "Funke-Test",
-            body: "Test-Notiz aus Funke.",
-            createdAt: Date()
-        )
-        return try ObsidianURLBuilder.url(for: draft, config: settings.obsidianConfig)
+    /// Speichert das Relay-Token im Keychain (leer = löschen).
+    func saveRelayToken() {
+        let trimmed = relayToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try secrets.setString(trimmed.isEmpty ? nil : trimmed, for: .relayToken)
+            relayStatus = .success(trimmed.isEmpty ? "Relay-Token entfernt." : "Relay-Token gespeichert.")
+        } catch {
+            relayStatus = .failure(Self.message(from: error))
+        }
     }
 
-    /// Hält das Ergebnis des Obsidian-Tests fest (sichtbarer Status).
-    func reportObsidianTest(_ status: StatusMessage) {
-        obsidianStatus = status
+    /// Prüft die Erreichbarkeit des Relay-Servers über `GET <relayBaseURL>/health`.
+    func testRelay() async {
+        let base = settings.relayBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty, let url = URL(string: base)?.appendingPathComponent("health") else {
+            relayStatus = .failure("Keine gültige Relay-URL hinterlegt.")
+            return
+        }
+
+        isTestingRelay = true
+        defer { isTestingRelay = false }
+
+        var request = URLRequest(url: url)
+        let token = (secrets.string(for: .relayToken) ?? relayToken).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if (200...299).contains(code) {
+                relayStatus = .success("Relay erreichbar (HTTP \(code)).")
+            } else {
+                relayStatus = .failure("Relay antwortete mit HTTP \(code).")
+            }
+        } catch {
+            relayStatus = .failure("Relay nicht erreichbar: \(error.localizedDescription)")
+        }
     }
 
     private static func message(from error: Error) -> String {

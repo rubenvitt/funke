@@ -2,10 +2,11 @@ import Foundation
 import Combine
 
 /// Steuert die Schnellerfassung: rohen Text aufnehmen (Tastatur oder Sprache),
-/// optional per KI veredeln und in ClickUp anlegen — mit Offline-Pufferung.
+/// per KI klassifizieren/veredeln und ans richtige Ziel routen — mit Offline-Pufferung.
 ///
-/// Grundsatz: Die KI ist **additiv und nie blockierend**. Schlägt die Veredelung
-/// fehl, bleibt der rohe Text erhalten und kann jederzeit roh angelegt werden.
+/// Die eigentliche Routing-/Queue-/Classify-Logik liegt im `CaptureRouter`
+/// (plattformfrei, getestet). Dieses ViewModel ist der dünne UI-Wrapper:
+/// Modus-Wahl, Review-Sheet, Banner, Sprachaufnahme. KI ist **additiv, nie blockierend**.
 @MainActor
 final class CaptureViewModel: ObservableObject {
     /// Kurzlebige Statusmeldung über dem Eingabefeld.
@@ -14,8 +15,9 @@ final class CaptureViewModel: ObservableObject {
         case failure(String)
     }
 
-    /// Was die Schnellerfassung anlegt: einen ClickUp-Task oder eine Obsidian-Notiz.
+    /// Was die Schnellerfassung anlegt. `.auto` lässt die KI entscheiden.
     enum CaptureMode: String, CaseIterable, Identifiable {
+        case auto
         case task
         case note
 
@@ -23,104 +25,115 @@ final class CaptureViewModel: ObservableObject {
 
         var title: String {
             switch self {
+            case .auto: return "Auto"
             case .task: return "Task"
             case .note: return "Notiz"
             }
         }
     }
 
-    @Published var mode: CaptureMode = .task
+    @Published var mode: CaptureMode = .auto
     @Published var text: String = ""
     @Published var isRecording: Bool = false
     @Published var isWorking: Bool = false
     @Published var banner: Banner?
-    /// Gesetzt, sobald ein KI-Vorschlag zur Review/Bearbeitung ansteht (Sheet).
+    /// Gesetzt, sobald ein KI-Task-Vorschlag zur Review/Bearbeitung ansteht (Sheet).
     @Published var review: EnrichmentSuggestion?
     /// Anzahl der noch nicht gesendeten, lokal gepufferten Captures.
     @Published var pendingCount: Int = 0
 
-    private let clickUp: ClickUpClienting
+    private let router: CaptureRouter
     private let enrichment: EnrichmentServicing
     private let settings: AppSettings
     private let queue: OfflineQueuing
     private let transcriber: (any SpeechTranscribing)?
     private let onHaptic: @MainActor (HapticFeedback) -> Void
-    /// Öffnet eine URL (z. B. `obsidian://…`); liefert `true` bei Erfolg.
-    /// Injiziert vom Composition-Root, damit das ViewModel UIKit-frei bleibt.
-    private let openURL: @MainActor (URL) async -> Bool
     /// Verhindert paralleles/doppeltes Nachsenden (z. B. App-Start + View-Task).
     private var isFlushing = false
 
     init(
-        clickUp: ClickUpClienting,
+        router: CaptureRouter,
         enrichment: EnrichmentServicing,
         settings: AppSettings,
         queue: OfflineQueuing,
         transcriber: (any SpeechTranscribing)?,
-        onHaptic: @escaping @MainActor (HapticFeedback) -> Void = { _ in },
-        openURL: @escaping @MainActor (URL) async -> Bool = { _ in false }
+        onHaptic: @escaping @MainActor (HapticFeedback) -> Void = { _ in }
     ) {
-        self.clickUp = clickUp
+        self.router = router
         self.enrichment = enrichment
         self.settings = settings
         self.queue = queue
         self.transcriber = transcriber
         self.onHaptic = onHaptic
-        self.openURL = openURL
     }
 
     // MARK: - Erfassen
 
-    /// Haupteinstieg über den „Erfassen"-Button.
-    /// KI an + Provider verfügbar → veredeln und Review zeigen.
-    /// Sonst (oder bei KI-Fehler) → roh anlegen bzw. puffern.
+    /// Haupteinstieg über den „Erfassen"-Button. Je nach Modus.
     func capture() async {
-        // Notiz-Modus zweigt komplett ab: keine KI-Veredelung, kein Puffern.
-        if mode == .note {
-            await captureNote()
-            return
-        }
-
         let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return }
-
         banner = nil
+        let config = settings.routerConfig
 
-        if settings.enrichmentEnabled {
-            let availability = await enrichment.availability(for: settings.activeProvider)
-            if availability.isAvailable {
-                isWorking = true
-                defer { isWorking = false }
-                do {
-                    let suggestion = try await enrichment.enrich(
-                        raw,
-                        using: settings.activeProvider,
-                        openRouterModel: settings.openRouterModel
-                    )
-                    review = suggestion
-                    return
-                } catch {
-                    // KI-Fehler ist nie blockierend: Hinweis zeigen, Text bleibt,
-                    // Roh-Anlegen ist weiterhin über denselben Button möglich.
-                    onHaptic(.warning)
-                    banner = .failure(Self.message(from: error))
-                    return
-                }
-            } else if let reason = availability.reason {
-                // Provider gewählt, aber nicht nutzbar → sichtbarer Hinweis,
-                // dann roh anlegen (KI darf die Erfassung nicht verhindern).
-                banner = .failure("KI nicht verfügbar: \(reason). Lege roh an.")
-            }
+        switch mode {
+        case .task: await captureTask(raw, config: config)
+        case .note: await captureNote(raw, config: config)
+        case .auto: await captureAuto(raw, config: config)
         }
-
-        await createOrQueue(
-            name: raw,
-            markdownDescription: nil,
-            priority: nil
-        )
     }
 
-    /// Legt den (ggf. editierten) KI-Vorschlag als Task an.
+    /// `.task`: KI an + verfügbar → veredeln + Review zeigen; sonst roh anlegen.
+    private func captureTask(_ raw: String, config: CaptureRouterConfig) async {
+        if config.enrichmentEnabled,
+           await enrichment.availability(for: config.provider).isAvailable {
+            isWorking = true
+            defer { isWorking = false }
+            do {
+                review = try await enrichment.enrich(raw, using: config.provider, openRouterModel: config.openRouterModel)
+                return
+            } catch {
+                onHaptic(.warning)
+                banner = .failure(Self.message(from: error))
+                return
+            }
+        }
+        await deliverTask(title: raw, body: nil, priority: nil, config: config)
+    }
+
+    /// `.note`: KI an + verfügbar → bereinigen; sonst Rohnotiz. Geht direkt raus (kein Review).
+    private func captureNote(_ raw: String, config: CaptureRouterConfig) async {
+        var title = RawTextTitle.derive(from: raw)
+        var body = raw
+        if config.enrichmentEnabled,
+           await enrichment.availability(for: config.provider).isAvailable {
+            isWorking = true
+            do {
+                let suggestion = try await enrichment.enrichNote(raw, using: config.provider, openRouterModel: config.openRouterModel)
+                title = suggestion.title
+                body = suggestion.body
+            } catch {
+                // KI nie blockierend: Rohnotiz senden.
+            }
+            isWorking = false
+        }
+        await deliverNote(title: title, body: body, config: config)
+    }
+
+    /// `.auto`: klassifizieren → Task: Review zeigen; Notiz: direkt senden.
+    private func captureAuto(_ raw: String, config: CaptureRouterConfig) async {
+        isWorking = true
+        let classification = await router.classify(raw, config: config)
+        isWorking = false
+        switch classification.kind {
+        case .task:
+            review = classification.taskSuggestion
+        case .note:
+            await deliverNote(title: classification.title, body: classification.body, config: config)
+        }
+    }
+
+    /// Legt den (ggf. editierten) Task-Vorschlag aus dem Review an.
     func confirm(_ edited: EnrichmentSuggestion) async {
         let name = edited.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
@@ -128,11 +141,7 @@ final class CaptureViewModel: ObservableObject {
             return
         }
         review = nil
-        await createOrQueue(
-            name: name,
-            markdownDescription: edited.details,
-            priority: edited.priority
-        )
+        await deliverTask(title: name, body: edited.details, priority: edited.priority, config: settings.routerConfig)
     }
 
     /// Bricht eine laufende Review ab; der rohe Text bleibt im Eingabefeld.
@@ -140,148 +149,41 @@ final class CaptureViewModel: ObservableObject {
         review = nil
     }
 
-    // MARK: - Notiz an Obsidian
+    // MARK: - Zustellen (über den Router, mit Offline-Pufferung)
 
-    /// Sendet den rohen Text als Notiz an Obsidian (`obsidian://`-URL-Schema).
-    ///
-    /// Grundsatz: **Notizen werden nie gepuffert.** Bei jedem Fehler bleibt der
-    /// Text erhalten, damit kein Inhalt verloren geht — geleert wird nur bei Erfolg.
-    private func captureNote() async {
-        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return }
-
-        banner = nil
-
-        let config = settings.obsidianConfig
-        guard !config.vault.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            onHaptic(.error)
-            banner = .failure(ObsidianError.missingVault.errorDescription ?? "Kein Obsidian-Vault hinterlegt.")
-            return
-        }
-
-        // KI an + Provider verfügbar → Rohnotiz „direkt mit KI" bereinigen.
-        // KI ist nie blockierend: scheitert die Bereinigung, geht die Rohnotiz raus.
-        let draft: NoteDraft
-        if settings.enrichmentEnabled,
-           await enrichment.availability(for: settings.activeProvider).isAvailable {
-            isWorking = true
-            do {
-                let suggestion = try await enrichment.enrichNote(
-                    raw,
-                    using: settings.activeProvider,
-                    openRouterModel: settings.openRouterModel
-                )
-                draft = NoteDraft(title: suggestion.title, body: suggestion.body, createdAt: Date())
-            } catch {
-                // KI nie blockierend: Rohnotiz senden.
-                draft = NoteDraft(title: Self.noteTitle(from: raw), body: raw, createdAt: Date())
-            }
-            isWorking = false
-        } else {
-            draft = NoteDraft(title: Self.noteTitle(from: raw), body: raw, createdAt: Date())
-        }
-
-        let url: URL
-        do {
-            url = try ObsidianURLBuilder.url(for: draft, config: config)
-        } catch {
-            onHaptic(.error)
-            banner = .failure(Self.message(from: error))
-            return
-        }
-
-        let ok = await openURL(url)
-        if ok {
-            text = ""
-            banner = .success("Notiz an Obsidian gesendet.")
-            onHaptic(.success)
-        } else {
-            onHaptic(.error)
-            banner = .failure(ObsidianError.couldNotOpen.errorDescription ?? "Obsidian konnte nicht geöffnet werden. Ist die App installiert?")
-        }
-    }
-
-    /// Leitet einen knappen Titel aus dem Roh-Text ab:
-    /// erste Zeile, sonst die ersten ~6 Wörter.
-    private static func noteTitle(from text: String) -> String {
-        let firstLine = text
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            .first
-            .map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? ""
-        if !firstLine.isEmpty {
-            return firstLine
-        }
-        let words = text.split(whereSeparator: { $0.isWhitespace }).prefix(6)
-        return words.joined(separator: " ")
-    }
-
-    // MARK: - Anlegen / Puffern
-
-    private func createOrQueue(
-        name: String,
-        markdownDescription: String?,
-        priority: Priority?
-    ) async {
-        guard let listID = settings.inboxListID, !listID.isEmpty else {
-            onHaptic(.warning)
-            banner = .failure("Keine Inbox-Liste konfiguriert. Bitte in den Einstellungen wählen.")
-            return
-        }
-
+    private func deliverTask(title: String, body: String?, priority: Priority?, config: CaptureRouterConfig) async {
         isWorking = true
         defer { isWorking = false }
-
         do {
-            try await clickUp.createTask(
-                listID: listID,
-                name: name,
-                markdownDescription: markdownDescription,
-                priority: priority
+            let queued = try await router.deliverTask(
+                title: title, body: body ?? "", priority: priority ?? .normal, config: config
             )
             text = ""
-            banner = .success("Aufgabe angelegt.")
-            onHaptic(.success)
-        } catch let error as ClickUpError {
-            switch error {
-            case .transport:
-                // Netzproblem → lokal puffern, niemals stiller Verlust.
-                await enqueueFallback(
-                    name: name,
-                    markdownDescription: markdownDescription,
-                    priority: priority
-                )
-            default:
-                onHaptic(.error)
-                banner = .failure(Self.message(from: error))
-            }
+            pendingCount = await queue.all().count
+            banner = .success(queued ? "Keine Verbindung — offline gepuffert." : "Aufgabe angelegt.")
+            onHaptic(queued ? .warning : .success)
         } catch {
             onHaptic(.error)
             banner = .failure(Self.message(from: error))
         }
     }
 
-    private func enqueueFallback(
-        name: String,
-        markdownDescription: String?,
-        priority: Priority?
-    ) async {
-        let pending = PendingCapture(
-            name: name,
-            markdownDescription: markdownDescription,
-            priority: priority
-        )
+    private func deliverNote(title: String, body: String, config: CaptureRouterConfig) async {
+        isWorking = true
+        defer { isWorking = false }
         do {
-            try await queue.enqueue(pending)
+            let queued = try await router.deliverNote(title: title, body: body, config: config)
             text = ""
             pendingCount = await queue.all().count
-            banner = .success("Keine Verbindung — offline gepuffert.")
-            onHaptic(.warning)
+            banner = .success(queued ? "Keine Verbindung — Notiz offline gepuffert." : "Notiz gespeichert.")
+            onHaptic(queued ? .warning : .success)
         } catch {
             onHaptic(.error)
-            banner = .failure("Konnte nicht puffern: \(Self.message(from: error))")
+            banner = .failure(Self.message(from: error))
         }
     }
+
+    // MARK: - Offline-Queue
 
     /// Aktualisiert `pendingCount` aus der Queue.
     func refreshPendingCount() async {
@@ -290,49 +192,16 @@ final class CaptureViewModel: ObservableObject {
 
     /// Sendet alle gepufferten Captures nach; erfolgreiche werden entfernt.
     func flushQueue() async {
-        // Reentranz-Schutz: App-Start und View-Task können beide auslösen.
         guard !isFlushing else { return }
         isFlushing = true
         defer { isFlushing = false }
 
-        let items = await queue.all()
-        guard !items.isEmpty else {
-            pendingCount = 0
-            return
-        }
-
-        guard let listID = settings.inboxListID, !listID.isEmpty else {
-            pendingCount = items.count
-            banner = .failure("Keine Inbox-Liste konfiguriert — gepufferte Aufgaben können nicht gesendet werden.")
-            return
-        }
-
-        var failure: String?
-        for item in items {
-            do {
-                try await clickUp.createTask(
-                    listID: listID,
-                    name: item.name,
-                    markdownDescription: item.markdownDescription,
-                    priority: item.priority
-                )
-                try await queue.remove(id: item.id)
-            } catch let error as ClickUpError {
-                // Bei jedem anhaltenden Fehler (offline ODER z. B. 401) abbrechen:
-                // Rest bleibt gepuffert, kein Sturm fehlschlagender Calls.
-                failure = Self.message(from: error)
-                break
-            } catch {
-                failure = Self.message(from: error)
-                break
-            }
-        }
-
-        pendingCount = await queue.all().count
-        if let failure {
+        let result = await router.flushQueue(config: settings.routerConfig)
+        pendingCount = result.remaining
+        if let failure = result.failure {
             banner = .failure(failure)
-        } else if pendingCount == 0 {
-            banner = .success("Alle gepufferten Aufgaben gesendet.")
+        } else if result.remaining == 0, pendingCount == 0 {
+            // Stiller Erfolg, wenn nichts mehr offen ist (keine Meldung bei leerer Queue).
         }
     }
 

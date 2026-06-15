@@ -59,6 +59,8 @@ protocol AIEnrichmentProvider: Sendable {
     func enrich(_ rawText: String) async throws -> EnrichmentSuggestion
     /// Bereinigt eine rohe Notiz zu Titel + aufgeräumtem Markdown-Body.
     func enrichNote(_ rawText: String) async throws -> NoteSuggestion
+    /// Klassifiziert (Task vs. Notiz) **und** veredelt in einem Aufruf.
+    func classify(_ rawText: String) async throws -> CaptureClassification
 }
 
 /// Fasst alle Provider zusammen und wählt anhand der Einstellungen.
@@ -77,4 +79,10 @@ protocol EnrichmentServicing: Sendable {
         using kind: EnrichmentProviderKind,
         openRouterModel: String
     ) async throws -> NoteSuggestion
+    /// Klassifiziert (Task vs. Notiz) + veredelt über den gewählten Provider.
+    func classify(
+        _ rawText: String,
+        using kind: EnrichmentProviderKind,
+        openRouterModel: String
+    ) async throws -> CaptureClassification
 }

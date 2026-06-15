@@ -120,6 +120,39 @@ struct EnrichmentService: EnrichmentServicing {
         }
     }
 
+    func classify(
+        _ rawText: String,
+        using kind: EnrichmentProviderKind,
+        openRouterModel: String
+    ) async throws -> CaptureClassification {
+        switch kind {
+        case .anthropic:
+            return try await anthropicProvider().classify(rawText)
+        case .openRouter:
+            return try await openRouterProvider(model: openRouterModel).classify(rawText)
+        case .appleOnDevice:
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, macOS 26.0, *) {
+                return try await AppleOnDeviceProvider().classify(rawText)
+            } else {
+                throw EnrichmentError.providerUnavailable("Apple On-Device benötigt iOS 26 oder neuer.")
+            }
+            #else
+            return try await AppleOnDeviceProvider().classify(rawText)
+            #endif
+        case .appleCloud:
+            #if canImport(FoundationModels)
+            if #available(iOS 27.0, macOS 27.0, *) {
+                return try await AppleCloudProvider().classify(rawText)
+            } else {
+                throw EnrichmentError.providerUnavailable("Apple Cloud benötigt iOS 27 oder neuer.")
+            }
+            #else
+            return try await AppleCloudProvider().classify(rawText)
+            #endif
+        }
+    }
+
     // MARK: - Provider-Aufbau
 
     private func anthropicProvider() -> AnthropicProvider {

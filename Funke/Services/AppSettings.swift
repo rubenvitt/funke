@@ -12,14 +12,12 @@ final class AppSettings: ObservableObject {
         static let teamID = "teamID"
         static let inboxListID = "inboxListID"
         static let inboxListName = "inboxListName"
-        static let obsidianVault = "obsidianVault"
-        static let obsidianInboxFolder = "obsidianInboxFolder"
-        static let obsidianNoteTarget = "obsidianNoteTarget"
-        static let obsidianUseAdvancedURI = "obsidianUseAdvancedURI"
+        static let relayBaseURL = "relayBaseURL"
+        static let noteFolder = "noteFolder"
+        static let vaultBookmark = "vaultBookmark"
     }
 
-    /// Default-OpenRouter-Modell (günstig/schnell für Klassifikation,
-    /// live verifiziert mit structured-outputs-Unterstützung, Juni 2026).
+    /// Default-OpenRouter-Modell (günstig/schnell für Klassifikation).
     static let defaultOpenRouterModel = "openai/gpt-5-nano"
 
     private let defaults: UserDefaults
@@ -43,23 +41,23 @@ final class AppSettings: ObservableObject {
         didSet { Self.write(inboxListName, Keys.inboxListName, defaults) }
     }
 
-    // MARK: - Obsidian (Notiz-Erfassung)
+    // MARK: - Notiz-Transport (Relay-Server / lokaler Vault)
 
-    /// Name des Obsidian-Vaults (leer = nicht konfiguriert).
-    @Published var obsidianVault: String {
-        didSet { defaults.set(obsidianVault, forKey: Keys.obsidianVault) }
+    /// Basis-URL des Funke-Relay-Servers (z. B. `https://funke.example.ts.net`).
+    /// iOS/Watch nutzen sie; macOS schreibt stattdessen direkt ins lokale Vault.
+    @Published var relayBaseURL: String {
+        didSet { defaults.set(relayBaseURL, forKey: Keys.relayBaseURL) }
     }
-    /// Vault-relativer Ordner für neue Notizen.
-    @Published var obsidianInboxFolder: String {
-        didSet { defaults.set(obsidianInboxFolder, forKey: Keys.obsidianInboxFolder) }
+    /// Vault-relativer Ordner für neue Notizen (z. B. „Inbox").
+    @Published var noteFolder: String {
+        didSet { defaults.set(noteFolder, forKey: Keys.noteFolder) }
     }
-    /// Ziel neuer Notizen (neue Datei oder Tagesnotiz).
-    @Published var obsidianNoteTarget: ObsidianNoteTarget {
-        didSet { defaults.set(obsidianNoteTarget.rawValue, forKey: Keys.obsidianNoteTarget) }
-    }
-    /// Ob für die Tagesnotiz das Advanced-URI-Plugin genutzt werden soll.
-    @Published var obsidianUseAdvancedURI: Bool {
-        didSet { defaults.set(obsidianUseAdvancedURI, forKey: Keys.obsidianUseAdvancedURI) }
+    /// macOS: Security-Scoped Bookmark auf das lokale Vault-Verzeichnis (`~/r-notes`).
+    @Published var vaultBookmark: Data? {
+        didSet {
+            if let vaultBookmark { defaults.set(vaultBookmark, forKey: Keys.vaultBookmark) }
+            else { defaults.removeObject(forKey: Keys.vaultBookmark) }
+        }
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -71,11 +69,9 @@ final class AppSettings: ObservableObject {
         self.teamID = defaults.string(forKey: Keys.teamID)
         self.inboxListID = defaults.string(forKey: Keys.inboxListID)
         self.inboxListName = defaults.string(forKey: Keys.inboxListName)
-        self.obsidianVault = defaults.string(forKey: Keys.obsidianVault) ?? ""
-        self.obsidianInboxFolder = defaults.string(forKey: Keys.obsidianInboxFolder) ?? "Inbox"
-        self.obsidianNoteTarget = ObsidianNoteTarget(rawValue: defaults.string(forKey: Keys.obsidianNoteTarget) ?? "")
-            ?? .inboxFile
-        self.obsidianUseAdvancedURI = defaults.bool(forKey: Keys.obsidianUseAdvancedURI)
+        self.relayBaseURL = defaults.string(forKey: Keys.relayBaseURL) ?? ""
+        self.noteFolder = defaults.string(forKey: Keys.noteFolder) ?? "Inbox"
+        self.vaultBookmark = defaults.data(forKey: Keys.vaultBookmark)
     }
 
     /// True, sobald eine Inbox-Liste gewählt wurde.
@@ -84,13 +80,14 @@ final class AppSettings: ObservableObject {
         return true
     }
 
-    /// Aktuelle Obsidian-Konfiguration als Wertobjekt für den `ObsidianURLBuilder`.
-    var obsidianConfig: ObsidianConfig {
-        ObsidianConfig(
-            vault: obsidianVault,
-            inboxFolder: obsidianInboxFolder,
-            target: obsidianNoteTarget,
-            useAdvancedURI: obsidianUseAdvancedURI
+    /// Aktuelle nicht-geheime Capture-Konfiguration für den `CaptureRouter`.
+    var routerConfig: CaptureRouterConfig {
+        CaptureRouterConfig(
+            inboxListID: inboxListID,
+            noteFolder: noteFolder,
+            enrichmentEnabled: enrichmentEnabled,
+            provider: activeProvider,
+            openRouterModel: openRouterModel
         )
     }
 

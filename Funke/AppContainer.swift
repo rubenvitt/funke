@@ -14,6 +14,8 @@ final class AppContainer: ObservableObject {
     let enrichment: EnrichmentServicing
     let queue: OfflineQueuing
     let transcriber: SpeechTranscriber
+    let noteSink: NoteSink
+    let router: CaptureRouter
 
     let capture: CaptureViewModel
     let today: TodayViewModel
@@ -34,8 +36,19 @@ final class AppContainer: ObservableObject {
         self.queue = offlineQueue
         self.transcriber = speech
 
+        // NoteSink löst pro Schreibvorgang die aktuelle Zielkonfiguration auf.
+        let sink = LiveNoteSink(resolve: {
+            await MainActor.run { AppContainer.buildSink(settings: settings, secrets: keychain) }
+        })
+        self.noteSink = sink
+
+        let captureRouter = CaptureRouter(
+            clickUp: clickUpClient, noteSink: sink, queue: offlineQueue, enrichment: enrichmentService
+        )
+        self.router = captureRouter
+
         self.capture = CaptureViewModel(
-            clickUp: clickUpClient,
+            router: captureRouter,
             enrichment: enrichmentService,
             settings: settings,
             queue: offlineQueue,
@@ -43,13 +56,6 @@ final class AppContainer: ObservableObject {
             onHaptic: { feedback in
                 #if os(iOS)
                 performHaptic(feedback)
-                #endif
-            },
-            openURL: { url in
-                #if os(iOS)
-                return await UIApplication.shared.open(url)
-                #else
-                return false
                 #endif
             }
         )
@@ -61,4 +67,34 @@ final class AppContainer: ObservableObject {
             enrichment: enrichmentService
         )
     }
+
+    /// Wählt den plattformgerechten NoteSink: macOS schreibt (bei vorhandenem
+    /// Bookmark) direkt ins lokale Vault, iOS/sonst über den Relay-Server.
+    @MainActor
+    static func buildSink(settings: AppSettings, secrets: SecretStoring) -> NoteSink? {
+        #if os(macOS)
+        if let bookmark = settings.vaultBookmark, let root = resolveBookmark(bookmark) {
+            return LocalFileNoteSink(vaultRoot: root, folder: settings.noteFolder)
+        }
+        #endif
+        let trimmed = settings.relayBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let base = URL(string: trimmed) else { return nil }
+        let token = secrets.string(for: .relayToken) ?? ""
+        return RelayNoteSink(baseURL: base, token: token, folder: settings.noteFolder)
+    }
+
+    #if os(macOS)
+    /// Löst das Security-Scoped Bookmark auf und beginnt den Zugriff.
+    static func resolveBookmark(_ data: Data) -> URL? {
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        return url
+    }
+    #endif
 }

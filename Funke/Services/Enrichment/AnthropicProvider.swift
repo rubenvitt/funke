@@ -46,6 +46,15 @@ struct AnthropicProvider: AIEnrichmentProvider {
         return try NoteResponseParser.parse(text)
     }
 
+    func classify(_ rawText: String) async throws -> CaptureClassification {
+        let text = try await requestText(
+            rawText: rawText,
+            systemInstruction: ClassifyPrompt.systemInstruction,
+            schemaString: ClassifyPrompt.jsonSchemaString
+        )
+        return try ClassifyResponseParser.parse(text)
+    }
+
     // MARK: - Geteilte HTTP-Maschinerie
 
     /// Führt die Messages-Anfrage aus und liefert den ersten Text-Block.

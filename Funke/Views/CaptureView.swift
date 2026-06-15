@@ -164,6 +164,7 @@ struct CaptureView: View {
     /// Beschriftung des Haupt-Buttons je nach Erfassungsmodus.
     private var captureButtonTitle: String {
         switch viewModel.mode {
+        case .auto: return "Erfassen"
         case .task: return "Erfassen"
         case .note: return "Notiz speichern"
         }
