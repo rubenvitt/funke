@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		CFD6DC662FE0B06300BAE787 /* FunkeWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CFD6DC482FE0B06100BAE787 /* FunkeWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CFD6DC662FE0B06300BAE787 /* FunkeWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CFD6DC482FE0B06100BAE787 /* FunkeWatch Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -399,6 +399,7 @@
 		};
 		CFD6DC652FE0B06300BAE787 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
+			platformFilter = ios;
 			target = CFD6DC472FE0B06100BAE787 /* FunkeWatch Watch App */;
 			targetProxy = CFD6DC642FE0B06300BAE787 /* PBXContainerItemProxy */;
 		};
