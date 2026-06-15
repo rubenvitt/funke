@@ -57,10 +57,11 @@ echo "probe" > vault/Inbox/probe.md
 
 ## CI/CD (GitHub Actions)
 
-`.github/workflows/docker.yml` baut bei Push auf `main`/`v*`-Tags das funke-relay-Image
-und pusht es nach **`ghcr.io/<dein-user>/<repo>`** (Tags: `latest`, Branch, SemVer, SHA).
-`go vet`/`go build` laufen als Test (auch bei PRs). Voraussetzung: dieser `server/`-Ordner
-ist das **Repo-Root** (Dockerfile + go.mod liegen oben).
+Der Workflow liegt im **Repo-Root** unter `.github/workflows/docker.yml` (GitHub Actions
+liest Workflows nur von dort, nicht aus Unterordnern). Er baut bei Push auf `main`/`v*`-Tags
+das funke-relay-Image und pusht es nach **`ghcr.io/<dein-user>/<repo>`** (Tags: `latest`,
+Branch, SemVer, SHA). `go vet`/`go build` laufen als Test (auch bei PRs). Build-Context und
+Go-Befehle zeigen auf den `server/`-Ordner; getriggert wird nur bei Änderungen unter `server/`.
 
 Auf dem Server dann das gepushte Image nutzen statt lokal zu bauen — in
 `docker-compose.yml` die `build: .`-Zeile durch

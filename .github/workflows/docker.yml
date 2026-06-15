@@ -1,14 +1,21 @@
 name: build
 
-# Annahme: Dieser server/-Ordner ist das Root des Server-Repos
-# (Dockerfile, go.mod, main.go liegen im Repo-Root).
+# Der Relay-Server liegt im Unterordner server/.
+# Workflows muessen aber im Repo-Root unter .github/workflows/ liegen,
+# daher zeigen alle Pfade hier explizit auf server/.
 
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths:
+      - 'server/**'
+      - '.github/workflows/docker.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/docker.yml'
   workflow_dispatch:
 
 env:
@@ -17,11 +24,16 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          # Server hat keine externen Deps (kein go.sum) -> Cache aus.
+          cache: false
       - run: go vet ./...
       - run: go build ./...
 
@@ -52,7 +64,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
