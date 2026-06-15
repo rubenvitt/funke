@@ -46,7 +46,9 @@ struct TodayView: View {
                 }
             }
         }
+        #if os(iOS)
         .listStyle(.insetGrouped)
+        #endif
     }
 
     private func row(_ task: TodayTask) -> some View {

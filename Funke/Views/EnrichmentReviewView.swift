@@ -46,7 +46,7 @@ struct EnrichmentReviewView: View {
                 }
             }
             .navigationTitle("Vorschlag prüfen")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Abbrechen") {

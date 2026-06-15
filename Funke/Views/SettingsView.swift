@@ -28,8 +28,7 @@ struct SettingsView: View {
     private var clickUpSection: some View {
         Section("ClickUp") {
             SecureField("Personal Token (pk_…)", text: $viewModel.clickUpToken)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .plainTextInput()
 
             Button {
                 Task { await viewModel.testConnection() }
@@ -125,17 +124,14 @@ struct SettingsView: View {
 
             if settings.activeProvider == .openRouter {
                 TextField("OpenRouter-Modell", text: $settings.openRouterModel)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .plainTextInput()
             }
 
             if settings.activeProvider.requiresAPIKey {
                 SecureField("Anthropic-Schlüssel", text: $viewModel.anthropicKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .plainTextInput()
                 SecureField("OpenRouter-Schlüssel", text: $viewModel.openRouterKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .plainTextInput()
                 Button("Schlüssel speichern") { viewModel.saveAPIKeys() }
                 statusRow(viewModel.keyStatus)
             }
@@ -148,22 +144,19 @@ struct SettingsView: View {
     private var relaySection: some View {
         Section("Notiz-Transport (Relay)") {
             TextField("Relay-URL (https://…)", text: $settings.relayBaseURL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .plainTextInput()
 
             SecureField("Relay-Token", text: $viewModel.relayToken)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .plainTextInput()
 
             TextField("Notiz-Ordner im Vault", text: $settings.noteFolder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .plainTextInput()
 
             #if os(macOS)
             // macOS schreibt direkt ins lokale Vault, wenn ein Ordner gewählt ist.
             LabeledContent("Lokales Vault") {
                 Text(settings.vaultBookmark == nil ? "nicht gewählt" : "gewählt")
-                    .foregroundStyle(settings.vaultBookmark == nil ? .secondary : .green)
+                    .foregroundStyle(settings.vaultBookmark == nil ? Color.secondary : Color.green)
             }
             Button("Vault-Ordner wählen…") {
                 if let bookmark = MacVaultAccess.pickVaultBookmark() {

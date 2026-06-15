@@ -26,7 +26,7 @@ struct CaptureView: View {
                 .padding()
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.secondarySystemBackground))
+                        .fill(Color.fieldBackground)
                 )
 
                 if viewModel.pendingCount > 0 {
@@ -44,14 +44,14 @@ struct CaptureView: View {
             }
             .padding()
             .navigationTitle("Erfassen")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             // Steuerleiste sitzt ÜBER der Tastatur und bleibt erreichbar, ohne
             // dass der Nutzer abschicken muss, um an die TabView-Leiste zu kommen.
             .safeAreaInset(edge: .bottom) {
                 controls
                     .padding(.horizontal)
                     .padding(.bottom, 8)
-                    .background(.bar)
+                    .background(.regularMaterial)
             }
             .task {
                 await viewModel.refreshPendingCount()
@@ -118,7 +118,7 @@ struct CaptureView: View {
                             Circle().fill(
                                 viewModel.isRecording
                                     ? Color.red.opacity(0.2)
-                                    : Color(.secondarySystemBackground)
+                                    : Color.fieldBackground
                             )
                         )
                         .foregroundStyle(viewModel.isRecording ? .red : .primary)
@@ -152,7 +152,7 @@ struct CaptureView: View {
                         .font(.title2)
                         .frame(width: 52, height: 52)
                         .background(
-                            Circle().fill(Color(.secondarySystemBackground))
+                            Circle().fill(Color.fieldBackground)
                         )
                         .foregroundStyle(.primary)
                 }
