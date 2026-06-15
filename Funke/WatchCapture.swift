@@ -3,7 +3,10 @@ import Foundation
 /// Geteilte Schlüssel + Payload-Bau für das WatchConnectivity-Relay (Watch → iPhone).
 /// Plattformneutral/testbar. Nutzt nur Property-List-Typen — Anforderung von
 /// `transferUserInfo`. Wird von Watch-Sender und iPhone-Empfänger geteilt.
-enum WatchCapture {
+///
+/// `nonisolated`, damit es auch in Targets mit „default actor isolation = MainActor"
+/// (Xcode 26+) aus den nonisolated WCSessionDelegate-Methoden nutzbar bleibt.
+nonisolated enum WatchCapture {
     static let textKey = "funke.capture.text"
     static let idKey = "funke.capture.id"
     static let createdAtKey = "funke.capture.createdAt"

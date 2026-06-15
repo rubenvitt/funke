@@ -1,5 +1,6 @@
 import Foundation
 #if os(watchOS) && canImport(WatchConnectivity)
+import Combine
 import WatchConnectivity
 
 /// Watch-Sender: erfasste Texte gehen per `transferUserInfo` ans iPhone
