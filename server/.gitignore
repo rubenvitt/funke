@@ -1,0 +1,5 @@
+# Niemals committen: Vault-Inhalte, Sync-Credentials, Secrets, Binaries
+vault/
+config/
+.env
+funke-relay

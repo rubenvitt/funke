@@ -31,6 +31,9 @@ final class PhoneRelay: NSObject, WCSessionDelegate {
         guard let capture = WatchCapture.parse(userInfo) else { return }
 
         let token = UIApplication.shared.beginBackgroundTask(withName: "FunkeWatchRelay")
+        // WCSession.default wird INNERHALB des @MainActor-Task erworben — der
+        // non-Sendable `session`-Parameter darf nicht über die Aktor-Grenze
+        // eingefangen werden (Swift-6-Sendable).
         Task { @MainActor in
             defer { UIApplication.shared.endBackgroundTask(token) }
             let services = CaptureServices.make()
@@ -42,12 +45,12 @@ final class PhoneRelay: NSObject, WCSessionDelegate {
                 case .task(let queued): label = queued ? "task-queued" : "task"
                 case .note(let queued): label = queued ? "note-queued" : "note"
                 }
-                session.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: label))
+                WCSession.default.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: label))
             } catch {
                 // Nicht-Transport-Fehler (z. B. fehlende Inbox-Liste): Rohtext puffern,
                 // damit nichts verloren geht; beim nächsten App-Start nachgesendet.
                 await services.router.bufferNote(rawText: capture.text, config: config)
-                session.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: "note-queued"))
+                WCSession.default.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: "note-queued"))
             }
         }
     }

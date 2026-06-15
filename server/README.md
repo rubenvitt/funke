@@ -20,62 +20,50 @@ Funke-App ──HTTPS POST /notes──►  funke-relay  ──schreibt .md─�
 ## Voraussetzungen
 
 - Linux-Server (immer an, via **Tailscale** o. ä. von unterwegs erreichbar)
-- **Node.js 22+** (für `obsidian-headless`)
-- **Go 1.21+** (zum Bauen des Relays) oder ein vorgebautes Binary
+- **Docker + Docker Compose**
 - Obsidian-Sync-Abo (das du schon hast)
 
-## 1. obsidian-headless einrichten (Vault-Sync auf dem Server)
+## Setup (Docker — empfohlen)
+
+Dateien: `Dockerfile` (funke-relay), `docker-compose.yml` (funke-relay +
+`obsidian-headless` via [Belphemur-Image](https://github.com/Belphemur/obsidian-headless-sync-docker)),
+`.env.example`. Beide Container teilen das `./vault`-Volume und laufen als UID 1000.
 
 ```bash
-npm install -g obsidian-headless        # Binary heißt: ob
+cd server
+cp .env.example .env            # Werte setzen (VAULT_NAME, FUNKE_TOKEN)
 
-ob login                                 # interaktiv: E-Mail + Passwort (+ 2FA)
-ob sync-list-remote                      # remote Vaults auflisten
-mkdir -p /srv/obsidian/vault
-cd /srv/obsidian/vault
-ob sync-setup --vault "r-notes" --device-name "funke-server"
-# E2E-Passwort wird abgefragt (separates Sync-Verschlüsselungspasswort)
+# 1) Auth-Token für Obsidian Sync holen (einmalig, interaktiv: E-Mail/Passwort/2FA):
+docker compose run --rm --entrypoint get-token obsidian-sync
+#    Ausgabe als OBSIDIAN_AUTH_TOKEN in .env eintragen.
 
-# Dauerlauf (beobachtet den Ordner, synct extern geschriebene .md hoch):
-ob sync --continuous
+# 2) Volume-Verzeichnisse anlegen (UID/GID 1000):
+mkdir -p vault config && sudo chown -R 1000:1000 vault config
+
+# 3) Stack starten (erster Lauf macht das ob sync-setup automatisch):
+docker compose up -d
+docker compose logs -f          # obsidian-sync sollte "continuous sync" zeigen
 ```
 
-Als Daemon (Beispiel-systemd-Unit `obsidian-sync.service`):
-
-```ini
-[Service]
-WorkingDirectory=/srv/obsidian/vault
-ExecStart=/usr/bin/ob sync --continuous
-Restart=on-failure
-User=DEIN_USER
-[Install]
-WantedBy=multi-user.target
-```
-
-> **Wichtig:** Login + `sync-setup` müssen **einmal interaktiv** (SSH) gelaufen
-> sein, damit die Credentials persistiert sind, bevor der Daemon startet.
-> Verifiziere einmal manuell: lege `echo test > /srv/obsidian/vault/Inbox/probe.md`
-> ab und prüfe, ob die Datei in Obsidian auftaucht.
-
-## 2. funke-relay bauen + starten
-
+**Einmal verifizieren**, dass extern geschriebene Dateien hochsyncen:
 ```bash
-go build -o /usr/local/bin/funke-relay .
-
-# Test (Vordergrund):
-FUNKE_VAULT=/srv/obsidian/vault FUNKE_TOKEN=$(openssl rand -hex 24) FUNKE_ADDR=127.0.0.1:8787 \
-  /usr/local/bin/funke-relay
+echo "probe" > vault/Inbox/probe.md
+# kurz warten, dann in Obsidian (Mac/iPhone) prüfen, ob "probe" auftaucht. Danach löschen.
 ```
 
-Als Service: `funke-relay.service` anpassen (Vault-Pfad + **Token**) und installieren:
+> `VAULT_NAME` ist der exakte (case-sensitive) remote Vault-Name. `VAULT_PASSWORD`
+> nur falls dein Vault E2E-verschlüsselt ist. `SYNC_MODE` ist `bidirectional` —
+> **nicht** `mirror-remote` (das würde extern hinzugefügte Dateien wieder löschen).
 
-```bash
-cp funke-relay.service /etc/systemd/system/
-# FUNKE_TOKEN auf einen langen Zufallswert setzen (derselbe wie in der App!)
-systemctl daemon-reload && systemctl enable --now funke-relay
-```
+## Setup (manuell, ohne Docker — Alternative)
 
-## 3. HTTPS von unterwegs (Tailscale)
+`obsidian-headless` (`npm i -g obsidian-headless`, Node 22+): `ob login` →
+`ob sync-setup --vault "r-notes"` → `ob sync --continuous` (als systemd-Daemon).
+funke-relay: `go build -o /usr/local/bin/funke-relay .`, dann `funke-relay.service`
+(Token/Vault-Pfad anpassen) installieren. Login muss **einmal interaktiv** laufen,
+bevor der Daemon startet.
+
+## HTTPS von unterwegs (Tailscale)
 
 Der Relay lauscht nur auf `127.0.0.1`. Tailscale stellt ihn mit **gültigem TLS-Zertifikat**
 unter deinem Tailnet bereit (kein Self-signed-Problem auf iOS):

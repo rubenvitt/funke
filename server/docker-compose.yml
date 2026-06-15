@@ -1,0 +1,51 @@
+# Funke-Relay + obsidian-headless als ein Stack.
+#
+# obsidian-sync hält /vault über Obsidian Sync aktuell und synct extern
+# geschriebene .md hoch. funke-relay teilt dasselbe Vault-Volume und schreibt
+# eingehende Notizen hinein. Beide laufen als UID/GID 1000 -> konfliktfreier
+# Volume-Zugriff.
+#
+# Einrichtung:
+#   1) cp .env.example .env  und Werte setzen
+#   2) Auth-Token holen (einmalig, interaktiv):
+#        docker compose run --rm --entrypoint get-token obsidian-sync
+#      Ausgabe in .env als OBSIDIAN_AUTH_TOKEN eintragen.
+#   3) mkdir -p vault config && sudo chown -R 1000:1000 vault config
+#   4) docker compose up -d
+#   5) HTTPS von unterwegs (auf dem Host): tailscale serve --bg --https=443 http://127.0.0.1:8787
+
+services:
+  obsidian-sync:
+    image: ghcr.io/belphemur/obsidian-headless-sync-docker:latest
+    container_name: funke-obsidian-sync
+    restart: unless-stopped
+    environment:
+      OBSIDIAN_AUTH_TOKEN: ${OBSIDIAN_AUTH_TOKEN:?get-token ausfuehren und in .env eintragen}
+      VAULT_NAME: ${VAULT_NAME:?exakter remote Vault-Name, z.B. r-notes}
+      VAULT_PASSWORD: ${VAULT_PASSWORD:-}
+      PUID: "1000"
+      PGID: "1000"
+      SYNC_MODE: bidirectional
+      CONFLICT_STRATEGY: merge
+      DEVICE_NAME: funke-server
+    volumes:
+      - ./vault:/vault
+      - ./config:/config
+
+  funke-relay:
+    build: .
+    container_name: funke-relay
+    restart: unless-stopped
+    # Gleiche UID wie obsidian-sync -> geteiltes Vault-Volume ohne Permission-Konflikt.
+    user: "1000:1000"
+    environment:
+      FUNKE_VAULT: /vault
+      FUNKE_TOKEN: ${FUNKE_TOKEN:?langer Zufallswert, identisch mit dem App-Token}
+      FUNKE_ADDR: ":8787"
+    volumes:
+      - ./vault:/vault
+    ports:
+      # Nur lokal; HTTPS/Exposition via Tailscale auf dem Host.
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      - obsidian-sync

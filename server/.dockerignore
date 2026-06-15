@@ -1,0 +1,5 @@
+vault/
+config/
+.env
+*.md
+funke-relay.service
