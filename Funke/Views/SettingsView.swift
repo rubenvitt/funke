@@ -159,6 +159,19 @@ struct SettingsView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
+            #if os(macOS)
+            // macOS schreibt direkt ins lokale Vault, wenn ein Ordner gewählt ist.
+            LabeledContent("Lokales Vault") {
+                Text(settings.vaultBookmark == nil ? "nicht gewählt" : "gewählt")
+                    .foregroundStyle(settings.vaultBookmark == nil ? .secondary : .green)
+            }
+            Button("Vault-Ordner wählen…") {
+                if let bookmark = MacVaultAccess.pickVaultBookmark() {
+                    settings.vaultBookmark = bookmark
+                }
+            }
+            #endif
+
             Button("Token speichern") { viewModel.saveRelayToken() }
 
             Button {

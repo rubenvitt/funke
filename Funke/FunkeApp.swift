@@ -11,8 +11,12 @@ struct FunkeApp: App {
                 today: container.today,
                 settings: container.settingsViewModel
             )
-            // Beim Start die Offline-Queue nachsenden (nie stiller Verlust).
             .task {
+                #if os(iOS)
+                // Watch-Relay-Empfang aktivieren (verarbeitet eingehende Captures).
+                PhoneRelay.shared.start()
+                #endif
+                // Beim Start die Offline-Queue nachsenden (nie stiller Verlust).
                 await container.capture.flushQueue()
             }
         }

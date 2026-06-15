@@ -132,6 +132,18 @@ struct CaptureRouter: Sendable {
         return (remaining, failure)
     }
 
+    /// Letzte Rückfalllinie (Watch/Intent): puffert den Rohtext als Notiz, falls
+    /// `route` mit einem nicht-Transport-Fehler scheitert — damit ein freihändig
+    /// erfasster Gedanke nie verloren geht. Wirft nicht.
+    func bufferNote(rawText: String, config: CaptureRouterConfig) async {
+        let raw = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        let title = RawTextTitle.derive(from: raw)
+        try? await queue.enqueue(.note(PendingNote(
+            title: title.isEmpty ? raw : title, body: raw, folder: config.noteFolder
+        )))
+    }
+
     /// Ohne KI keine echte Einordnung → konservativ Notiz mit abgeleitetem Titel + Rohtext.
     static func fallback(_ raw: String) -> CaptureClassification {
         let title = RawTextTitle.derive(from: raw)

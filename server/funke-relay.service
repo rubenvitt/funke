@@ -1,0 +1,24 @@
+[Unit]
+Description=Funke Relay (Notiz-Endpoint -> Obsidian-Vault)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Pfade/Token anpassen. Token muss zum Relay-Token in der Funke-App passen.
+Environment=FUNKE_VAULT=/srv/obsidian/vault
+Environment=FUNKE_TOKEN=CHANGE_ME_LANGER_ZUFALLSWERT
+Environment=FUNKE_ADDR=127.0.0.1:8787
+ExecStart=/usr/local/bin/funke-relay
+Restart=on-failure
+RestartSec=3
+# Härtung
+DynamicUser=yes
+# DynamicUser braucht Schreibrecht im Vault: Vault-Ordner der Gruppe zuweisen
+# oder ReadWritePaths setzen.
+ReadWritePaths=/srv/obsidian/vault
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
