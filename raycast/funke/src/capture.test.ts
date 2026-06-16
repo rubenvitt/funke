@@ -28,7 +28,7 @@ test("leere stdout bei Erfolg liefert Fallback-Meldung", async () => {
     exitCode: 0,
   }));
   assert.equal(result.ok, true);
-  assert.equal(result.message, "Erfasst");
+  assert.equal(result.message, "An Funke gesendet");
 });
 
 test("non-zero exitCode wird als Fehler mit Shortcut-Hinweis gemeldet", async () => {

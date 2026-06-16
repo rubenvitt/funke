@@ -27,7 +27,7 @@ export async function runCapture(
       return { ok: false, message: SHORTCUT_MISSING_HINT };
     }
     const message = stdout.trim();
-    return { ok: true, message: message.length > 0 ? message : "Erfasst" };
+    return { ok: true, message: message.length > 0 ? message : "An Funke gesendet" };
   } catch {
     return { ok: false, message: SHORTCUT_MISSING_HINT };
   }
@@ -35,22 +35,16 @@ export async function runCapture(
 
 export const shortcutRunner: ShortcutRunner = (text) =>
   new Promise((resolve, reject) => {
-    const child = spawn("shortcuts", [
-      "run",
-      SHORTCUT_NAME,
-      "--input-path",
-      "/dev/stdin",
-      "--output-path",
-      "/dev/stdout",
-    ]);
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => (stdout += chunk));
+    // App Intents lassen sich von der CLI nur über die Shortcuts-Engine auslösen.
+    // Der Text wird inline als echte Shortcut-Eingabe übergeben — NICHT als Datei
+    // via `--input-path /dev/stdin`: dabei bekäme der Shortcut die Datei und beim
+    // Text-Zwang nur deren Namen ("stdin") statt des Inhalts.
+    const url =
+      `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}` +
+      `&input=text&text=${encodeURIComponent(text)}`;
+    // `-g`: im Hintergrund öffnen, ohne die Shortcuts-App in den Vordergrund zu holen.
+    // Fire-and-forget: `open` liefert keine Shortcut-Ausgabe zurück (stdout bleibt leer).
+    const child = spawn("open", ["-g", url]);
     child.on("error", reject);
-    child.on("close", (code) => resolve({ stdout, exitCode: code ?? 1 }));
-    // stdin-Fehler (z.B. EPIPE, wenn der Shortcut stdin früh schließt) werden auf
-    // dem stdin-Stream geworfen, nicht auf dem Child — sonst unhandled exception.
-    child.stdin.on("error", reject);
-    child.stdin.write(text);
-    child.stdin.end();
+    child.on("close", (code) => resolve({ stdout: "", exitCode: code ?? 1 }));
   });
