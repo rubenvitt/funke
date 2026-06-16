@@ -1,0 +1,52 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "funke",
+  "title": "Funke",
+  "description": "Schnelle Erfassung in Funke (Task oder Notiz via Auto-Klassifizierung)",
+  "icon": "funke-icon.png",
+  "author": "ruben",
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "erfassen",
+      "title": "Funke: Erfassen",
+      "subtitle": "Funke",
+      "description": "Text schnell in Funke erfassen (Auto-Klassifizierung)",
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "text",
+          "type": "text",
+          "placeholder": "Was möchtest du erfassen?",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "notiz",
+      "title": "Funke: Notiz erfassen",
+      "subtitle": "Funke",
+      "description": "Längere Notiz in Funke erfassen (mehrzeilig)",
+      "mode": "view"
+    }
+  ],
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "fix-lint": "ray lint --fix",
+    "test": "node --test src/"
+  },
+  "dependencies": {
+    "@raycast/api": "^1.104.19",
+    "@raycast/utils": "^2.2.6"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.1.1",
+    "@types/node": "^25.9.3",
+    "@types/react": "^19.2.17",
+    "eslint": "^10.5.0",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3"
+  }
+}
