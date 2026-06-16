@@ -44,9 +44,13 @@ export const shortcutRunner: ShortcutRunner = (text) =>
       "/dev/stdout",
     ]);
     let stdout = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => (stdout += chunk));
     child.on("error", reject);
     child.on("close", (code) => resolve({ stdout, exitCode: code ?? 1 }));
+    // stdin-Fehler (z.B. EPIPE, wenn der Shortcut stdin früh schließt) werden auf
+    // dem stdin-Stream geworfen, nicht auf dem Child — sonst unhandled exception.
+    child.stdin.on("error", reject);
     child.stdin.write(text);
     child.stdin.end();
   });
