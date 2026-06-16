@@ -1,9 +1,14 @@
 import { showToast, Toast, LaunchProps } from "@raycast/api";
 import { runCapture, shortcutRunner } from "./capture";
 
-export default async function Command(props: LaunchProps<{ arguments: { text: string } }>) {
+export default async function Command(
+  props: LaunchProps<{ arguments: { text: string } }>,
+) {
   const text = props.arguments.text ?? "";
-  const toast = await showToast({ style: Toast.Style.Animated, title: "Erfasse in Funke …" });
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: "Erfasse in Funke …",
+  });
 
   const result = await runCapture(text, shortcutRunner);
 

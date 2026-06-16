@@ -23,13 +23,19 @@ test("erfolgreicher Lauf gibt getrimmte stdout-Meldung zurueck", async () => {
 });
 
 test("leere stdout bei Erfolg liefert Fallback-Meldung", async () => {
-  const result = await runCapture("Hallo", async () => ({ stdout: "  \n", exitCode: 0 }));
+  const result = await runCapture("Hallo", async () => ({
+    stdout: "  \n",
+    exitCode: 0,
+  }));
   assert.equal(result.ok, true);
   assert.equal(result.message, "Erfasst");
 });
 
 test("non-zero exitCode wird als Fehler mit Shortcut-Hinweis gemeldet", async () => {
-  const result = await runCapture("Hallo", async () => ({ stdout: "", exitCode: 1 }));
+  const result = await runCapture("Hallo", async () => ({
+    stdout: "",
+    exitCode: 1,
+  }));
   assert.equal(result.ok, false);
   assert.match(result.message, /Funke erfassen/);
 });

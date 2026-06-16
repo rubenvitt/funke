@@ -9,9 +9,14 @@ export interface CaptureOutcome {
   message: string;
 }
 
-export type ShortcutRunner = (text: string) => Promise<{ stdout: string; exitCode: number }>;
+export type ShortcutRunner = (
+  text: string,
+) => Promise<{ stdout: string; exitCode: number }>;
 
-export async function runCapture(rawText: string, run: ShortcutRunner): Promise<CaptureOutcome> {
+export async function runCapture(
+  rawText: string,
+  run: ShortcutRunner,
+): Promise<CaptureOutcome> {
   const text = rawText.trim();
   if (text.length === 0) {
     return { ok: false, message: "Bitte gib Text ein." };
