@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Einstellungen: ClickUp-Verbindung, Inbox-Auswahl und KI-Provider.
+/// Einstellungen: ClickUp-Verbindung, Inbox-Auswahl und KI-Provider — im Glut-Look.
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject private var settings: AppSettings
@@ -16,17 +16,24 @@ struct SettingsView: View {
                 clickUpSection
                 workspaceSection
                 inboxSection
+                phoenixSection
                 aiSection
                 relaySection
+                footerSection
             }
+            // Glut-Theming: System-Form-Hintergrund weg, warme Fläche drunter.
+            .scrollContentBackground(.hidden)
+            .background(FunkeTheme.background)
+            .tint(FunkeTheme.accent)
             .navigationTitle("Einstellungen")
+            .task { await viewModel.loadPhoenix() }
         }
     }
 
     // MARK: - ClickUp
 
     private var clickUpSection: some View {
-        Section("ClickUp") {
+        Section(header: Text("ClickUp").funkeSectionLabel()) {
             SecureField("Personal Token (pk_…)", text: $viewModel.clickUpToken)
                 .plainTextInput()
 
@@ -41,6 +48,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .foregroundStyle(FunkeTheme.accent)
             .disabled(viewModel.isTestingConnection)
 
             statusRow(viewModel.connectionStatus)
@@ -50,11 +58,11 @@ struct SettingsView: View {
     // MARK: - Workspace
 
     private var workspaceSection: some View {
-        Section("Workspace") {
+        Section(header: Text("Workspace").funkeSectionLabel()) {
             if viewModel.teams.isEmpty {
                 Text("Nach erfolgreichem Verbindungstest erscheinen hier deine Workspaces.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(FunkeTheme.dim)
             } else {
                 Picker("Workspace", selection: workspaceBinding) {
                     Text("Bitte wählen").tag(String?.none)
@@ -67,7 +75,7 @@ struct SettingsView: View {
             if let error = viewModel.hierarchyError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(FunkeTheme.red)
             }
         }
     }
@@ -75,12 +83,13 @@ struct SettingsView: View {
     // MARK: - Inbox
 
     private var inboxSection: some View {
-        Section("Inbox-Liste") {
+        Section(header: Text("Inbox-Liste").funkeSectionLabel()) {
             if let name = settings.inboxListName {
                 Label(name, systemImage: "tray")
+                    .foregroundStyle(FunkeTheme.text)
             } else {
                 Text("Noch keine Inbox gewählt.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(FunkeTheme.dim)
             }
 
             if !viewModel.spaces.isEmpty {
@@ -95,14 +104,88 @@ struct SettingsView: View {
                         Task { await viewModel.loadSpaces(teamID: teamID) }
                     }
                 }
+                .foregroundStyle(FunkeTheme.accent)
             }
         }
+    }
+
+    // MARK: - Feuersturm · 12 Wochen (Phönix-Progression)
+
+    private var phoenixSection: some View {
+        Section(header: phoenixHeader) {
+            if viewModel.isLoadingPhoenix {
+                HStack {
+                    ProgressView()
+                    Text("Lade Feuersturm…")
+                        .font(.footnote)
+                        .foregroundStyle(FunkeTheme.dim)
+                }
+            }
+
+            // Aktiver Zustand der Progression (kein Schalter): Woche X von N.
+            if let feuersturm = viewModel.phoenix?.feuersturm {
+                Text("\(feuersturm.title) · Woche \(feuersturm.weekIndex) von \(feuersturm.totalWeeks)")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(FunkeTheme.text)
+            }
+
+            // Ziele: Titel + Status, darunter optionaler Fortschrittsbalken.
+            if let goals = viewModel.phoenix?.goals {
+                ForEach(goals) { goal in
+                    goalRow(goal)
+                }
+            }
+
+            if let error = viewModel.phoenixError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(FunkeTheme.red)
+            }
+        }
+    }
+
+    // Header mit Flammen-Symbol in Akzent.
+    private var phoenixHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(FunkeTheme.accent)
+            Text("Feuersturm · 12 Wochen")
+        }
+        .funkeSectionLabel()
+    }
+
+    @ViewBuilder
+    private func goalRow(_ goal: PhoenixGoal) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(goal.title)
+                    .foregroundStyle(FunkeTheme.text)
+                Spacer()
+                Text(goal.statusName)
+                    .font(.footnote)
+                    .foregroundStyle(FunkeTheme.dim)
+            }
+
+            if let progress = goal.progress {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(FunkeTheme.line)
+                        Capsule()
+                            .fill(FunkeTheme.accent)
+                            .frame(width: geo.size.width * max(0, min(1, progress)))
+                    }
+                }
+                .frame(height: 6)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - KI
 
     private var aiSection: some View {
-        Section("KI-Veredelung") {
+        Section(header: Text("KI-Veredelung").funkeSectionLabel()) {
             Toggle("KI aktiv", isOn: enrichmentBinding)
 
             Picker("Provider", selection: providerBinding) {
@@ -117,7 +200,7 @@ struct SettingsView: View {
                 } else {
                     Text(viewModel.availabilityText)
                         .foregroundStyle(
-                            viewModel.providerAvailability?.isAvailable == true ? .green : .secondary
+                            viewModel.providerAvailability?.isAvailable == true ? FunkeTheme.positive : FunkeTheme.dim
                         )
                 }
             }
@@ -133,6 +216,7 @@ struct SettingsView: View {
                 SecureField("OpenRouter-Schlüssel", text: $viewModel.openRouterKey)
                     .plainTextInput()
                 Button("Schlüssel speichern") { viewModel.saveAPIKeys() }
+                    .foregroundStyle(FunkeTheme.accent)
                 statusRow(viewModel.keyStatus)
             }
         }
@@ -142,7 +226,7 @@ struct SettingsView: View {
     // MARK: - Relay (Notiz-Transport)
 
     private var relaySection: some View {
-        Section("Notiz-Transport (Relay)") {
+        Section(header: Text("Notiz-Transport (Relay)").funkeSectionLabel()) {
             TextField("Relay-URL (https://…)", text: $settings.relayBaseURL)
                 .plainTextInput()
 
@@ -156,16 +240,18 @@ struct SettingsView: View {
             // macOS schreibt direkt ins lokale Vault, wenn ein Ordner gewählt ist.
             LabeledContent("Lokales Vault") {
                 Text(settings.vaultBookmark == nil ? "nicht gewählt" : "gewählt")
-                    .foregroundStyle(settings.vaultBookmark == nil ? Color.secondary : Color.green)
+                    .foregroundStyle(settings.vaultBookmark == nil ? FunkeTheme.dim : FunkeTheme.positive)
             }
             Button("Vault-Ordner wählen…") {
                 if let bookmark = MacVaultAccess.pickVaultBookmark() {
                     settings.vaultBookmark = bookmark
                 }
             }
+            .foregroundStyle(FunkeTheme.accent)
             #endif
 
             Button("Token speichern") { viewModel.saveRelayToken() }
+                .foregroundStyle(FunkeTheme.accent)
 
             Button {
                 Task { await viewModel.testRelay() }
@@ -176,13 +262,26 @@ struct SettingsView: View {
                     if viewModel.isTestingRelay { ProgressView() }
                 }
             }
+            .foregroundStyle(FunkeTheme.accent)
             .disabled(viewModel.isTestingRelay)
 
             statusRow(viewModel.relayStatus)
 
             Text("Notizen gehen an deinen Relay-Server (obsidian-headless); Obsidian Sync verteilt sie. Auf dem Mac kann Funke stattdessen direkt ins lokale Vault schreiben.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FunkeTheme.dim)
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footerSection: some View {
+        Section {
+            Text("Funke · v0.3 · Erschaffen → Loslassen → Neuerschaffen")
+                .font(.system(size: 12))
+                .foregroundStyle(FunkeTheme.dim)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .listRowBackground(Color.clear)
         }
     }
 
@@ -221,11 +320,11 @@ struct SettingsView: View {
             case .success(let message):
                 Label(message, systemImage: "checkmark.circle.fill")
                     .font(.footnote)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(FunkeTheme.positive)
             case .failure(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(FunkeTheme.red)
             }
         }
     }

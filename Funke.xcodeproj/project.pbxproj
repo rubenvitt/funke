@@ -486,6 +486,8 @@
 				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Obsidian Vault";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Funke nutzt das Mikrofon, um deine Sprachnotiz live zu transkribieren.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Funke transkribiert deine Sprachnotiz on-device zu Text.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Funke zeigt deine heutigen Termine in der Tages-Timeline an.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Funke zeigt deine heutigen Termine in der Tages-Timeline an.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -529,6 +531,8 @@
 				INFOPLIST_KEY_NSFileProviderPresenceUsageDescription = "Obsidian Vault";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Funke nutzt das Mikrofon, um deine Sprachnotiz live zu transkribieren.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Funke transkribiert deine Sprachnotiz on-device zu Text.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Funke zeigt deine heutigen Termine in der Tages-Timeline an.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Funke zeigt deine heutigen Termine in der Tages-Timeline an.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
