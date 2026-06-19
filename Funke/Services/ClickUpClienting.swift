@@ -28,6 +28,12 @@ protocol ClickUpClienting: Sendable {
 
     /// Setzt den Status einer Aufgabe (PUT /task/{id}).
     func setStatus(taskID: String, status: String) async throws
+
+    /// Verschiebt Start-/Fälligkeitszeit einer Aufgabe (Timeline-Drag, PUT /task/{id}).
+    func updateTaskSchedule(taskID: String, startDate: Date?, dueDate: Date?) async throws
+
+    /// Read-only-Überblick über die Phönix-Liste: aktiver Feuersturm + Ziele.
+    func phoenixOverview(listID: String, now: Date) async throws -> PhoenixOverview
 }
 
 extension ClickUpClienting {

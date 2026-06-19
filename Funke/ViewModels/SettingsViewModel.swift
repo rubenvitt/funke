@@ -34,6 +34,12 @@ final class SettingsViewModel: ObservableObject {
     @Published var providerAvailability: ProviderAvailability?
     @Published var isCheckingProvider: Bool = false
 
+    // MARK: - Phönix-Progression (Feuersturm + Ziele)
+
+    @Published var phoenix: PhoenixOverview?
+    @Published var isLoadingPhoenix: Bool = false
+    @Published var phoenixError: String?
+
     // MARK: - Relay (Notiz-Transport)
 
     /// Spiegel des im Keychain hinterlegten Relay-Tokens (zur Bearbeitung im Feld).
@@ -220,6 +226,24 @@ final class SettingsViewModel: ObservableObject {
     /// Schaltet die KI-Veredelung an/aus.
     func setEnrichmentEnabled(_ enabled: Bool) {
         settings.enrichmentEnabled = enabled
+    }
+
+    // MARK: - Phönix-Progression
+
+    /// Lädt Feuersturm-Status + Ziele read-only aus der Phönix-Liste.
+    func loadPhoenix() async {
+        guard let listID = settings.phoenixListID, !listID.isEmpty else {
+            phoenix = nil
+            return
+        }
+        isLoadingPhoenix = true
+        phoenixError = nil
+        defer { isLoadingPhoenix = false }
+        do {
+            phoenix = try await clickUp.phoenixOverview(listID: listID, now: Date())
+        } catch {
+            phoenixError = Self.message(from: error)
+        }
     }
 
     // MARK: - Relay (Notiz-Transport)

@@ -13,6 +13,7 @@ final class AppContainer: ObservableObject {
     let clickUp: ClickUpClienting
     let enrichment: EnrichmentServicing
     let queue: OfflineQueuing
+    let history: CaptureHistorying
     let transcriber: SpeechTranscriber
     let noteSink: NoteSink
     let router: CaptureRouter
@@ -27,6 +28,7 @@ final class AppContainer: ObservableObject {
         let clickUpClient = ClickUpClient(secrets: keychain)
         let enrichmentService = EnrichmentService(secrets: keychain)
         let offlineQueue = OfflineQueue()
+        let captureHistory = CaptureHistoryStore()
         let speech = SpeechTranscriber()
 
         self.secrets = keychain
@@ -34,6 +36,7 @@ final class AppContainer: ObservableObject {
         self.clickUp = clickUpClient
         self.enrichment = enrichmentService
         self.queue = offlineQueue
+        self.history = captureHistory
         self.transcriber = speech
 
         // NoteSink löst pro Schreibvorgang die aktuelle Zielkonfiguration auf.
@@ -52,6 +55,7 @@ final class AppContainer: ObservableObject {
             enrichment: enrichmentService,
             settings: settings,
             queue: offlineQueue,
+            history: captureHistory,
             transcriber: speech,
             onHaptic: { feedback in
                 #if os(iOS)

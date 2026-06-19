@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
         static let teamID = "teamID"
         static let inboxListID = "inboxListID"
         static let inboxListName = "inboxListName"
+        static let phoenixListID = "phoenixListID"
         static let relayBaseURL = "relayBaseURL"
         static let noteFolder = "noteFolder"
         static let vaultBookmark = "vaultBookmark"
@@ -19,6 +20,9 @@ final class AppSettings: ObservableObject {
 
     /// Default-OpenRouter-Modell (günstig/schnell für Klassifikation).
     static let defaultOpenRouterModel = "openai/gpt-5-nano"
+
+    /// Default-Phönix-Liste („Phönix Ära 2025 - 2030") als Quelle für Feuersturm/Ziele.
+    static let defaultPhoenixListID = "901509503459"
 
     private let defaults: UserDefaults
 
@@ -39,6 +43,11 @@ final class AppSettings: ObservableObject {
     }
     @Published var inboxListName: String? {
         didSet { Self.write(inboxListName, Keys.inboxListName, defaults) }
+    }
+    /// ClickUp-Liste der Phönix-Progression (Feuersturm + Ziele). Quelle für „Heute"-Chip
+    /// und die Feuersturm-Sektion der Einstellungen.
+    @Published var phoenixListID: String? {
+        didSet { Self.write(phoenixListID, Keys.phoenixListID, defaults) }
     }
 
     // MARK: - Notiz-Transport (Relay-Server / lokaler Vault)
@@ -69,6 +78,7 @@ final class AppSettings: ObservableObject {
         self.teamID = defaults.string(forKey: Keys.teamID)
         self.inboxListID = defaults.string(forKey: Keys.inboxListID)
         self.inboxListName = defaults.string(forKey: Keys.inboxListName)
+        self.phoenixListID = defaults.string(forKey: Keys.phoenixListID) ?? Self.defaultPhoenixListID
         self.relayBaseURL = defaults.string(forKey: Keys.relayBaseURL) ?? ""
         self.noteFolder = defaults.string(forKey: Keys.noteFolder) ?? "Inbox"
         self.vaultBookmark = defaults.data(forKey: Keys.vaultBookmark)

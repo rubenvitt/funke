@@ -41,11 +41,20 @@ final class CaptureViewModel: ObservableObject {
     @Published var review: EnrichmentSuggestion?
     /// Anzahl der noch nicht gesendeten, lokal gepufferten Captures.
     @Published var pendingCount: Int = 0
+    /// Anzahl heute erfasster Funken (für „X Funken heute").
+    @Published var todaySparkCount: Int = 0
+    /// Die letzten erfassten Funken (neueste zuerst) für die Liste unter dem Eingabefeld.
+    @Published var recentSparks: [CapturedSpark] = []
+    /// Kurzlebiger Erfolgs-Toast („Funke in Inbox erfasst"). Die View blendet ihn selbst aus.
+    @Published var toast: String?
+    /// Zähler, der bei jeder erfolgreichen Erfassung steigt — triggert die Funken-Animation.
+    @Published var sparkBurst: Int = 0
 
     private let router: CaptureRouter
     private let enrichment: EnrichmentServicing
     private let settings: AppSettings
     private let queue: OfflineQueuing
+    private let history: CaptureHistorying
     private let transcriber: (any SpeechTranscribing)?
     private let onHaptic: @MainActor (HapticFeedback) -> Void
     /// Verhindert paralleles/doppeltes Nachsenden (z. B. App-Start + View-Task).
@@ -56,6 +65,7 @@ final class CaptureViewModel: ObservableObject {
         enrichment: EnrichmentServicing,
         settings: AppSettings,
         queue: OfflineQueuing,
+        history: CaptureHistorying,
         transcriber: (any SpeechTranscribing)?,
         onHaptic: @escaping @MainActor (HapticFeedback) -> Void = { _ in }
     ) {
@@ -63,8 +73,22 @@ final class CaptureViewModel: ObservableObject {
         self.enrichment = enrichment
         self.settings = settings
         self.queue = queue
+        self.history = history
         self.transcriber = transcriber
         self.onHaptic = onHaptic
+    }
+
+    /// Lädt Funken-Zähler + jüngste Einträge aus dem lokalen Verlauf.
+    func refreshHistory() async {
+        todaySparkCount = await history.todayCount(now: Date())
+        recentSparks = await history.recent(limit: 3)
+    }
+
+    /// Protokolliert einen erfolgreich erfassten Funken lokal und aktualisiert die Anzeige.
+    private func recordSpark(_ text: String) async {
+        await history.record(text: text, date: Date())
+        await refreshHistory()
+        sparkBurst &+= 1
     }
 
     // MARK: - Erfassen
@@ -160,7 +184,9 @@ final class CaptureViewModel: ObservableObject {
             )
             text = ""
             pendingCount = await queue.all().count
-            banner = .success(queued ? "Keine Verbindung — offline gepuffert." : "Aufgabe angelegt.")
+            await recordSpark(title)
+            toast = queued ? "Offline gepuffert" : "Funke in Inbox erfasst"
+            banner = nil
             onHaptic(queued ? .warning : .success)
         } catch {
             onHaptic(.error)
@@ -175,7 +201,9 @@ final class CaptureViewModel: ObservableObject {
             let queued = try await router.deliverNote(title: title, body: body, config: config)
             text = ""
             pendingCount = await queue.all().count
-            banner = .success(queued ? "Keine Verbindung — Notiz offline gepuffert." : "Notiz gespeichert.")
+            await recordSpark(title)
+            toast = queued ? "Notiz offline gepuffert" : "Notiz gespeichert"
+            banner = nil
             onHaptic(queued ? .warning : .success)
         } catch {
             onHaptic(.error)

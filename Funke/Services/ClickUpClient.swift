@@ -102,12 +102,54 @@ struct ClickUpClient: ClickUpClienting {
         try await send(path: "/task/\(taskID)", method: "PUT", body: SetStatusBody(status: status))
     }
 
+    func updateTaskSchedule(taskID: String, startDate: Date?, dueDate: Date?) async throws {
+        let body = UpdateScheduleBody(
+            start_date: startDate.map { Int($0.timeIntervalSince1970 * 1000) },
+            start_date_time: startDate == nil ? nil : true,
+            due_date: dueDate.map { Int($0.timeIntervalSince1970 * 1000) },
+            due_date_time: dueDate == nil ? nil : true
+        )
+        try await send(path: "/task/\(taskID)", method: "PUT", body: body)
+    }
+
+    func phoenixOverview(listID: String, now: Date) async throws -> PhoenixOverview {
+        // Auch geschlossene Tasks: Feuersturm-Sprint kann laufen, einzelne Ziele erledigt.
+        let dto: TasksEnvelopeDTO = try await get(
+            path: "/list/\(listID)/task",
+            queryItems: [
+                URLQueryItem(name: "include_closed", value: "true"),
+                URLQueryItem(name: "subtasks", value: "false")
+            ]
+        )
+        let tasks = dto.tasks.map { Self.makeTodayTask(from: $0) }
+
+        // Aktiver Feuersturm: Art == feuersturm, dessen Zeitraum „jetzt" enthält
+        // (sonst der erste mit gültigem Zeitraum).
+        let feuersturmTasks = tasks.filter { $0.art == .feuersturm }
+        let feuersturm: FeuersturmInfo? = feuersturmTasks
+            .lazy
+            .compactMap { FeuersturmInfo.from(start: $0.startDate, due: $0.dueDate, now: now, title: $0.name) }
+            .first { ($0.weekIndex >= 1) && ($0.weekIndex <= $0.totalWeeks) }
+            ?? feuersturmTasks.compactMap {
+                FeuersturmInfo.from(start: $0.startDate, due: $0.dueDate, now: now, title: $0.name)
+            }.first
+
+        // Ziele: Tasks „Ziel …".
+        let goals: [PhoenixGoal] = tasks
+            .filter { $0.name.range(of: #"^Ziel\b"#, options: .regularExpression) != nil }
+            .map { PhoenixGoal(id: $0.id, title: $0.name, statusName: $0.statusName, progress: nil) }
+
+        return PhoenixOverview(feuersturm: feuersturm, goals: goals)
+    }
+
     // MARK: - Mapping
 
+    /// Field-ID des Dropdown-Custom-Fields „🗓️ Art" (Phönix-Progression).
+    static let artFieldID = "1fcaa3c7-9766-4b1c-ae08-e083df572861"
+
     private static func makeTodayTask(from dto: TaskDTO) -> TodayTask {
-        let dueDate: Date? = dto.due_date
-            .flatMap { Double($0) }
-            .map { Date(timeIntervalSince1970: $0 / 1000) }
+        let dueDate = msStringToDate(dto.due_date)
+        let startDate = msStringToDate(dto.start_date)
 
         let priority: Priority? = {
             guard let prio = dto.priority else { return nil }
@@ -120,6 +162,11 @@ struct ClickUpClient: ClickUpClienting {
             return nil
         }()
 
+        let art: PhoenixArt? = dto.custom_fields?
+            .first { $0.id == artFieldID }?
+            .selectedOptionName
+            .flatMap { PhoenixArt(clickUpName: $0) }
+
         return TodayTask(
             id: dto.id,
             name: dto.name,
@@ -129,8 +176,16 @@ struct ClickUpClient: ClickUpClienting {
             statusType: dto.status?.type ?? "",
             listID: dto.list?.id,
             listName: dto.list?.name,
-            url: dto.url
+            url: dto.url,
+            startDate: startDate,
+            timeEstimateMs: dto.time_estimate?.intValue,
+            art: art
         )
+    }
+
+    /// ms-String („1700000000000") → Date.
+    private static func msStringToDate(_ value: String?) -> Date? {
+        value.flatMap { Double($0) }.map { Date(timeIntervalSince1970: $0 / 1000) }
     }
 
     // MARK: - Transport
@@ -279,9 +334,14 @@ private struct TaskDTO: Decodable {
     let status: TaskStatusDTO?
     /// ms als String oder null.
     let due_date: String?
+    /// ms als String oder null (geplanter Start).
+    let start_date: String?
+    /// Geschätzte Dauer in ms (Int oder String, je nach Endpoint).
+    let time_estimate: FlexibleInt?
     /// Objekt `{priority:String?, id:String?}` oder null.
     let priority: TaskPriorityDTO?
     let list: TaskListDTO?
+    let custom_fields: [CustomFieldDTO]?
 
     struct TaskStatusDTO: Decodable {
         let status: String
@@ -296,6 +356,52 @@ private struct TaskDTO: Decodable {
     struct TaskListDTO: Decodable {
         let id: String
         let name: String
+    }
+}
+
+/// Ein Custom-Field aus der Task-Antwort. Für Dropdowns liefert `value` den
+/// `orderindex` der gewählten Option; `type_config.options` enthält die Namen.
+private struct CustomFieldDTO: Decodable {
+    let id: String
+    let value: FlexibleInt?
+    let type_config: TypeConfig?
+
+    struct TypeConfig: Decodable {
+        let options: [Option]?
+    }
+
+    struct Option: Decodable {
+        let id: String
+        let name: String
+        let orderindex: Int?
+    }
+
+    /// Löst den gewählten Optionsnamen auf (Dropdown): `value` = orderindex.
+    var selectedOptionName: String? {
+        guard let index = value?.intValue,
+              let options = type_config?.options else { return nil }
+        if let byOrder = options.first(where: { $0.orderindex == index }) {
+            return byOrder.name
+        }
+        // Fallback: positionell, falls orderindex fehlt.
+        return index >= 0 && index < options.count ? options[index].name : nil
+    }
+}
+
+/// Decodiert einen Int, der im JSON als Zahl **oder** String stehen kann.
+private struct FlexibleInt: Decodable {
+    let intValue: Int?
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let i = try? container.decode(Int.self) {
+            intValue = i
+        } else if let d = try? container.decode(Double.self) {
+            intValue = Int(d)
+        } else if let s = try? container.decode(String.self) {
+            intValue = Int(s)
+        } else {
+            intValue = nil
+        }
     }
 }
 
@@ -316,7 +422,16 @@ private struct CreateTaskBody: Encodable {
     let priority: Int?
 }
 
-/// Body für `PUT /task/{task_id}`.
+/// Body für `PUT /task/{task_id}` (Status setzen).
 private struct SetStatusBody: Encodable {
     let status: String
+}
+
+/// Body für `PUT /task/{task_id}` (Termin verschieben). `nil`-Felder werden
+/// dank `encodeIfPresent` ausgelassen; `*_time:true` sorgt für Uhrzeit-Genauigkeit.
+private struct UpdateScheduleBody: Encodable {
+    let start_date: Int?
+    let start_date_time: Bool?
+    let due_date: Int?
+    let due_date_time: Bool?
 }

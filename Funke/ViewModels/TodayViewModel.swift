@@ -14,18 +14,64 @@ struct PrioritySection: Identifiable, Equatable {
     }
 }
 
-/// Lädt die heute fälligen/überfälligen Aufgaben und erlaubt das Abhaken.
-/// Abhaken erfolgt optimistisch und rollt bei Fehlern sichtbar zurück.
+/// Lädt die heute fälligen/überfälligen Aufgaben und erlaubt das Abhaken sowie
+/// das Verschieben von Fokus-Blöcken auf der Timeline. Abhaken erfolgt optimistisch
+/// und rollt bei Fehlern sichtbar zurück; erledigte Aufgaben bleiben (durchgestrichen)
+/// im Bestand, damit der Execution-Ring einen stabilen Nenner hat.
 @MainActor
 final class TodayViewModel: ObservableObject {
-    @Published var sections: [PrioritySection] = []
+    /// Alle geladenen offenen Aufgaben (heute fällig + überfällig).
+    @Published private(set) var tasks: [TodayTask] = []
+    /// Lokal abgehakte Aufgaben-IDs (optimistisch; Rollback bei Fehler).
+    @Published private(set) var doneIDs: Set<String> = []
+    /// Aktiver Feuersturm-Sprint (Woche X von N), falls vorhanden.
+    @Published private(set) var feuersturm: FeuersturmInfo?
     @Published var isLoading: Bool = false
     @Published var error: String?
 
     /// True, wenn nicht geladen wird, kein Fehler vorliegt und nichts ansteht.
     var isEmpty: Bool {
-        !isLoading && error == nil && sections.isEmpty
+        !isLoading && error == nil && tasks.isEmpty
     }
+
+    // MARK: - Abgeleitete Sichten (für die View)
+
+    /// Überfällige Aufgaben (Fälligkeit vor heute) — noch offen.
+    var overdue: [TodayTask] {
+        tasks
+            .filter { !doneIDs.contains($0.id) && $0.isOverdue(referenceDate: now(), calendar: calendar) }
+            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+    }
+
+    /// Heute eingeplante Aufgaben für die Timeline (nach Startzeit), inkl. erledigter
+    /// (durchgestrichen). Überfällige sind hier ausgenommen.
+    var scheduled: [TodayTask] {
+        tasks
+            .filter { !$0.isOverdue(referenceDate: now(), calendar: calendar) }
+            .sorted { ($0.startDate ?? $0.dueDate ?? .distantFuture) < ($1.startDate ?? $1.dueDate ?? .distantFuture) }
+    }
+
+    /// Priorität-gruppierte Sektionen offener Aufgaben (Kompatibilität/Fallback-Liste).
+    var sections: [PrioritySection] {
+        Self.group(
+            tasks.filter { !doneIDs.contains($0.id) },
+            referenceDate: now(),
+            calendar: calendar
+        )
+    }
+
+    /// Geplante Aufgaben gesamt (Nenner des Execution-Rings).
+    var plannedCount: Int { tasks.count }
+    /// Erledigte Aufgaben (Zähler).
+    var doneCount: Int { doneIDs.count }
+    /// Execution-Fortschritt 0…1.
+    var executionProgress: Double {
+        plannedCount == 0 ? 0 : Double(doneCount) / Double(plannedCount)
+    }
+    /// Anzahl heute geplanter Flammen (für den Feuersturm-Chip).
+    var plannedFlames: Int { scheduled.filter { $0.art == .flamme }.count }
+
+    func isDone(_ task: TodayTask) -> Bool { doneIDs.contains(task.id) }
 
     private let clickUp: ClickUpClienting
     private let settings: AppSettings
@@ -48,7 +94,7 @@ final class TodayViewModel: ObservableObject {
 
     func load() async {
         guard let teamID = settings.teamID, !teamID.isEmpty else {
-            sections = []
+            tasks = []
             error = "Kein Workspace gewählt. Bitte in den Einstellungen einrichten."
             return
         }
@@ -59,28 +105,35 @@ final class TodayViewModel: ObservableObject {
 
         do {
             let user = try await clickUp.authorizedUser()
-            let tasks = try await clickUp.todayTasks(
-                teamID: teamID,
-                assigneeID: user.id,
-                now: now()
-            )
-            sections = Self.group(tasks, referenceDate: now(), calendar: calendar)
+            let loaded = try await clickUp.todayTasks(teamID: teamID, assigneeID: user.id, now: now())
+            tasks = loaded
+            doneIDs = []
         } catch {
-            sections = []
+            tasks = []
             self.error = Self.message(from: error)
         }
+
+        // Feuersturm-Überblick additiv laden (Fehler hier sind nicht blockierend).
+        await loadFeuersturm()
     }
 
-    // MARK: - Abhaken (optimistisch)
+    private func loadFeuersturm() async {
+        guard let listID = settings.phoenixListID, !listID.isEmpty else {
+            feuersturm = nil
+            return
+        }
+        feuersturm = try? await clickUp.phoenixOverview(listID: listID, now: now()).feuersturm
+    }
+
+    // MARK: - Abhaken (optimistisch, erledigt bleibt sichtbar)
 
     func complete(_ task: TodayTask) async {
-        let snapshot = sections
-        // Optimistisch entfernen.
-        remove(task)
+        guard !doneIDs.contains(task.id) else { return }
+        doneIDs.insert(task.id)          // optimistisch
         error = nil
 
         guard let listID = task.listID, !listID.isEmpty else {
-            sections = snapshot
+            doneIDs.remove(task.id)
             error = ClickUpError.noDoneStatus(listName: task.listName).localizedDescription
             return
         }
@@ -88,26 +141,46 @@ final class TodayViewModel: ObservableObject {
         do {
             let statuses = try await clickUp.listStatuses(listID: listID)
             guard let done = statuses.doneStatus() else {
-                sections = snapshot
+                doneIDs.remove(task.id)
                 error = ClickUpError.noDoneStatus(listName: task.listName).localizedDescription
                 return
             }
             try await clickUp.setStatus(taskID: task.id, status: done.name)
         } catch {
-            // Rollback bei jedem Fehler — der Nutzer sieht die Aufgabe wieder.
-            sections = snapshot
+            doneIDs.remove(task.id)       // Rollback — Aufgabe erscheint wieder.
+            self.error = Self.message(from: error)
+        }
+    }
+
+    // MARK: - Timeline-Verschieben (optimistisch)
+
+    /// Verschiebt den Start eines Fokus-Blocks; behält die Dauer (due = start + Dauer).
+    func reschedule(_ task: TodayTask, to newStart: Date) async {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        let original = tasks[index]
+        let duration = TimeInterval(original.durationMinutes * 60)
+        let newDue = newStart.addingTimeInterval(duration)
+
+        tasks[index] = Self.copy(original, startDate: newStart, dueDate: newDue) // optimistisch
+        error = nil
+
+        do {
+            try await clickUp.updateTaskSchedule(taskID: task.id, startDate: newStart, dueDate: newDue)
+        } catch {
+            if let i = tasks.firstIndex(where: { $0.id == task.id }) { tasks[i] = original } // Rollback
             self.error = Self.message(from: error)
         }
     }
 
     // MARK: - Helpers
 
-    private func remove(_ task: TodayTask) {
-        sections = sections.compactMap { section in
-            let remaining = section.tasks.filter { $0.id != task.id }
-            guard !remaining.isEmpty else { return nil }
-            return PrioritySection(priority: section.priority, tasks: remaining)
-        }
+    private static func copy(_ t: TodayTask, startDate: Date?, dueDate: Date?) -> TodayTask {
+        TodayTask(
+            id: t.id, name: t.name, priority: t.priority, dueDate: dueDate ?? t.dueDate,
+            statusName: t.statusName, statusType: t.statusType, listID: t.listID,
+            listName: t.listName, url: t.url, startDate: startDate ?? t.startDate,
+            timeEstimateMs: t.timeEstimateMs, art: t.art
+        )
     }
 
     /// Gruppiert nach Priorität (urgent→low, dann „ohne"), innerhalb sortiert

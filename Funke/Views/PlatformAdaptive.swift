@@ -1,15 +1,9 @@
 import SwiftUI
 
 extension Color {
-    /// Plattform-adaptiver Feld-/Karten-Hintergrund (iOS-Systemfarbe bzw. macOS-Äquivalent).
+    /// Plattform-adaptiver Feld-/Karten-Hintergrund — folgt dem Glut-Theme.
     static var fieldBackground: Color {
-        #if os(iOS)
-        Color(uiColor: .secondarySystemBackground)
-        #elseif os(macOS)
-        Color(nsColor: .controlBackgroundColor)
-        #else
-        Color.gray.opacity(0.2)
-        #endif
+        FunkeTheme.surface2
     }
 }
 
