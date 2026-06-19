@@ -35,10 +35,14 @@ final class CaptureViewModel: ObservableObject {
     @Published var mode: CaptureMode = .auto
     @Published var text: String = ""
     @Published var isRecording: Bool = false
-    @Published var isWorking: Bool = false
+    /// Anzahl gerade im Hintergrund laufender Erfassungen (KI + Zustellung).
+    /// > 0 → es wird gesendet, ohne die Eingabe zu blockieren.
+    @Published var inFlight: Int = 0
     @Published var banner: Banner?
     /// Gesetzt, sobald ein KI-Task-Vorschlag zur Review/Bearbeitung ansteht (Sheet).
     @Published var review: EnrichmentSuggestion?
+    /// Weitere fertige Task-Vorschläge, die warten, weil schon ein Review offen ist.
+    private var reviewBacklog: [EnrichmentSuggestion] = []
     /// Anzahl der noch nicht gesendeten, lokal gepufferten Captures.
     @Published var pendingCount: Int = 0
     /// Anzahl heute erfasster Funken (für „X Funken heute").
@@ -91,47 +95,56 @@ final class CaptureViewModel: ObservableObject {
         sparkBurst &+= 1
     }
 
-    // MARK: - Erfassen
+    // MARK: - Erfassen (asynchron, nicht-blockierend)
 
-    /// Haupteinstieg über den „Erfassen"-Button. Je nach Modus.
+    /// Haupteinstieg über den „Erfassen"-Button. Leert das Eingabefeld **sofort**,
+    /// damit direkt der nächste Funke getippt werden kann, und verarbeitet die
+    /// Erfassung (KI + Zustellung) im Hintergrund. Mehrere Erfassungen laufen
+    /// parallel; `inFlight` zählt die offenen.
     func capture() async {
         let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return }
+        text = ""
         banner = nil
         let config = settings.routerConfig
+        let mode = self.mode
+        inFlight += 1
+        Task { await self.process(raw, mode: mode, config: config) }
+    }
 
+    /// Hintergrund-Verarbeitung einer einzelnen Erfassung.
+    private func process(_ raw: String, mode: CaptureMode, config: CaptureRouterConfig) async {
+        defer { inFlight -= 1 }
         switch mode {
-        case .task: await captureTask(raw, config: config)
-        case .note: await captureNote(raw, config: config)
-        case .auto: await captureAuto(raw, config: config)
+        case .task: await processTask(raw, config: config)
+        case .note: await processNote(raw, config: config)
+        case .auto: await processAuto(raw, config: config)
         }
     }
 
-    /// `.task`: KI an + verfügbar → veredeln + Review zeigen; sonst roh anlegen.
-    private func captureTask(_ raw: String, config: CaptureRouterConfig) async {
+    /// `.task`: KI an + verfügbar → veredeln + Review einreihen; sonst roh anlegen.
+    /// KI-Fehler sind nicht blockierend — dann geht der Roh-Task raus (kein Datenverlust).
+    private func processTask(_ raw: String, config: CaptureRouterConfig) async {
         if config.enrichmentEnabled,
            await enrichment.availability(for: config.provider).isAvailable {
-            isWorking = true
-            defer { isWorking = false }
             do {
-                review = try await enrichment.enrich(raw, using: config.provider, openRouterModel: config.openRouterModel)
+                let suggestion = try await enrichment.enrich(raw, using: config.provider, openRouterModel: config.openRouterModel)
+                enqueueReview(suggestion)
                 return
             } catch {
                 onHaptic(.warning)
-                banner = .failure(Self.message(from: error))
-                return
+                // Fällt unten auf den Roh-Task zurück.
             }
         }
         await deliverTask(title: raw, body: nil, priority: nil, config: config)
     }
 
     /// `.note`: KI an + verfügbar → bereinigen; sonst Rohnotiz. Geht direkt raus (kein Review).
-    private func captureNote(_ raw: String, config: CaptureRouterConfig) async {
+    private func processNote(_ raw: String, config: CaptureRouterConfig) async {
         var title = RawTextTitle.derive(from: raw)
         var body = raw
         if config.enrichmentEnabled,
            await enrichment.availability(for: config.provider).isAvailable {
-            isWorking = true
             do {
                 let suggestion = try await enrichment.enrichNote(raw, using: config.provider, openRouterModel: config.openRouterModel)
                 title = suggestion.title
@@ -139,50 +152,65 @@ final class CaptureViewModel: ObservableObject {
             } catch {
                 // KI nie blockierend: Rohnotiz senden.
             }
-            isWorking = false
         }
         await deliverNote(title: title, body: body, config: config)
     }
 
-    /// `.auto`: klassifizieren → Task: Review zeigen; Notiz: direkt senden.
-    private func captureAuto(_ raw: String, config: CaptureRouterConfig) async {
-        isWorking = true
+    /// `.auto`: klassifizieren → Task: Review einreihen; Notiz: direkt senden.
+    private func processAuto(_ raw: String, config: CaptureRouterConfig) async {
         let classification = await router.classify(raw, config: config)
-        isWorking = false
         switch classification.kind {
         case .task:
-            review = classification.taskSuggestion
+            enqueueReview(classification.taskSuggestion)
         case .note:
             await deliverNote(title: classification.title, body: classification.body, config: config)
         }
     }
 
-    /// Legt den (ggf. editierten) Task-Vorschlag aus dem Review an.
+    /// Legt den (ggf. editierten) Task-Vorschlag aus dem Review an — ebenfalls
+    /// nicht-blockierend; das nächste wartende Review wird sofort gezeigt.
     func confirm(_ edited: EnrichmentSuggestion) async {
         let name = edited.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             banner = .failure("Titel darf nicht leer sein.")
             return
         }
-        review = nil
-        await deliverTask(title: name, body: edited.details, priority: edited.priority, config: settings.routerConfig)
+        advanceReview()
+        let config = settings.routerConfig
+        inFlight += 1
+        Task {
+            await self.deliverTask(title: name, body: edited.details, priority: edited.priority, config: config)
+            self.inFlight -= 1
+        }
     }
 
-    /// Bricht eine laufende Review ab; der rohe Text bleibt im Eingabefeld.
+    /// Verwirft das aktuelle Review und zeigt das nächste wartende (falls vorhanden).
     func cancelReview() {
-        review = nil
+        advanceReview()
+    }
+
+    /// Reiht einen fertigen Task-Vorschlag ein: zeigt ihn, oder hängt ihn hinten an,
+    /// falls schon ein Review offen ist — so geht bei schneller Mehrfacherfassung keiner verloren.
+    private func enqueueReview(_ suggestion: EnrichmentSuggestion) {
+        if review == nil {
+            review = suggestion
+        } else {
+            reviewBacklog.append(suggestion)
+        }
+    }
+
+    /// Schaltet auf das nächste wartende Review weiter (oder schließt das Sheet).
+    private func advanceReview() {
+        review = reviewBacklog.isEmpty ? nil : reviewBacklog.removeFirst()
     }
 
     // MARK: - Zustellen (über den Router, mit Offline-Pufferung)
 
     private func deliverTask(title: String, body: String?, priority: Priority?, config: CaptureRouterConfig) async {
-        isWorking = true
-        defer { isWorking = false }
         do {
             let queued = try await router.deliverTask(
                 title: title, body: body ?? "", priority: priority ?? .normal, config: config
             )
-            text = ""
             pendingCount = await queue.all().count
             await recordSpark(title)
             toast = queued ? "Offline gepuffert" : "Funke in Inbox erfasst"
@@ -195,11 +223,8 @@ final class CaptureViewModel: ObservableObject {
     }
 
     private func deliverNote(title: String, body: String, config: CaptureRouterConfig) async {
-        isWorking = true
-        defer { isWorking = false }
         do {
             let queued = try await router.deliverNote(title: title, body: body, config: config)
-            text = ""
             pendingCount = await queue.all().count
             await recordSpark(title)
             toast = queued ? "Notiz offline gepuffert" : "Notiz gespeichert"

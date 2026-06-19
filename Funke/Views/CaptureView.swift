@@ -106,9 +106,22 @@ struct CaptureView: View {
 
             Spacer()
 
-            Text(todaySparkLabel)
-                .font(.system(size: 14))
-                .foregroundStyle(FunkeTheme.dim)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(todaySparkLabel)
+                    .font(.system(size: 14))
+                    .foregroundStyle(FunkeTheme.dim)
+                // Läuft im Hintergrund — blockiert die Eingabe nicht.
+                if viewModel.inFlight > 0 {
+                    HStack(spacing: 5) {
+                        ProgressView().controlSize(.mini)
+                        Text("\(viewModel.inFlight) wird gesendet…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(FunkeTheme.dim)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .animation(.default, value: viewModel.inFlight)
         }
     }
 
@@ -228,19 +241,14 @@ struct CaptureView: View {
     }
 
     private var sendButton: some View {
+        // Bewusst NICHT während des Sendens deaktiviert — Senden läuft im
+        // Hintergrund, der Nutzer kann sofort den nächsten Funke tippen.
         Button {
-            isTextFocused = false
+            // Fokus bleibt erhalten, damit direkt weitergetippt werden kann.
             Task { await viewModel.capture() }
         } label: {
-            Group {
-                if viewModel.isWorking {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 22, weight: .bold))
-                }
-            }
+            Image(systemName: "arrow.up")
+                .font(.system(size: 22, weight: .bold))
         }
         .buttonStyle(AccentCircleButtonStyle())
         .disabled(isSendDisabled)
@@ -259,7 +267,6 @@ struct CaptureView: View {
     }
 
     private var isSendDisabled: Bool {
-        viewModel.isWorking ||
         viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -314,10 +321,11 @@ struct CaptureView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
         .background(alignment: .top) {
-            FunkeTheme.surface
+            // Gleiche warme Fläche wie oben — keine weiße Leiste am unteren Rand.
+            FunkeTheme.background
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) {
-                    Rectangle().fill(FunkeTheme.line).frame(height: 1)
+                    Rectangle().fill(FunkeTheme.line2).frame(height: 1)
                 }
         }
     }

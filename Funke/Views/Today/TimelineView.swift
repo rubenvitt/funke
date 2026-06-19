@@ -186,15 +186,31 @@ struct TimelineView: View {
 
     // MARK: - Drag-Logik (iOS)
 
+    // Verschieben erst nach kurzem Long-Press aktivieren — sonst „kämpft" der
+    // vertikale Drag mit der vertikalen ScrollView von „Heute" (SwiftUI gäbe dem
+    // Scrollen den Vorrang). Long-Press → Block hebt sich an → ziehen → loslassen.
     #if os(iOS)
     private func drag(for task: TodayTask, baseMinutes: Int) -> some Gesture {
-        DragGesture(minimumDistance: 6)
+        LongPressGesture(minimumDuration: 0.28)
+            .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
-                draggingID = task.id
-                dragY = value.translation.height
+                switch value {
+                case .first(true):
+                    // Long-Press erkannt → Karte zum Ziehen „freigeben".
+                    draggingID = task.id
+                    dragY = 0
+                case .second(true, let drag):
+                    draggingID = task.id
+                    dragY = drag?.translation.height ?? 0
+                default:
+                    break
+                }
             }
             .onEnded { value in
-                let deltaMin = Int((value.translation.height / ppm).rounded())
+                defer { draggingID = nil; dragY = 0 }
+                guard case .second(true, let drag?) = value else { return }
+
+                let deltaMin = Int((drag.translation.height / ppm).rounded())
                 let raw = baseMinutes + deltaMin
                 // Auf 15-Minuten-Raster runden.
                 let snapped = Int((Double(raw) / 15).rounded()) * 15
@@ -202,9 +218,6 @@ struct TimelineView: View {
                 let lo = h0 * 60
                 let hi = max(lo, h1 * 60 - task.durationMinutes)
                 let clamped = min(max(snapped, lo), hi)
-
-                draggingID = nil
-                dragY = 0
 
                 if clamped != baseMinutes {
                     let day = Calendar.current.startOfDay(for: task.start ?? now)
