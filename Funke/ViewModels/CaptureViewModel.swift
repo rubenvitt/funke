@@ -6,7 +6,8 @@ import Combine
 ///
 /// Die eigentliche Routing-/Queue-/Classify-Logik liegt im `CaptureRouter`
 /// (plattformfrei, getestet). Dieses ViewModel ist der dünne UI-Wrapper:
-/// Modus-Wahl, Review-Sheet, Banner, Sprachaufnahme. KI ist **additiv, nie blockierend**.
+/// Modus-Wahl, Banner, Sprachaufnahme. KI ist **additiv, nie blockierend**:
+/// veredelte Tasks gehen ohne Bestätigungsschritt direkt raus.
 @MainActor
 final class CaptureViewModel: ObservableObject {
     /// Kurzlebige Statusmeldung über dem Eingabefeld.
@@ -39,10 +40,6 @@ final class CaptureViewModel: ObservableObject {
     /// > 0 → es wird gesendet, ohne die Eingabe zu blockieren.
     @Published var inFlight: Int = 0
     @Published var banner: Banner?
-    /// Gesetzt, sobald ein KI-Task-Vorschlag zur Review/Bearbeitung ansteht (Sheet).
-    @Published var review: EnrichmentSuggestion?
-    /// Weitere fertige Task-Vorschläge, die warten, weil schon ein Review offen ist.
-    private var reviewBacklog: [EnrichmentSuggestion] = []
     /// Anzahl der noch nicht gesendeten, lokal gepufferten Captures.
     @Published var pendingCount: Int = 0
     /// Anzahl heute erfasster Funken (für „X Funken heute").
@@ -122,14 +119,14 @@ final class CaptureViewModel: ObservableObject {
         }
     }
 
-    /// `.task`: KI an + verfügbar → veredeln + Review einreihen; sonst roh anlegen.
+    /// `.task`: KI an + verfügbar → veredeln + direkt anlegen; sonst roh anlegen.
     /// KI-Fehler sind nicht blockierend — dann geht der Roh-Task raus (kein Datenverlust).
     private func processTask(_ raw: String, config: CaptureRouterConfig) async {
         if config.enrichmentEnabled,
            await enrichment.availability(for: config.provider).isAvailable {
             do {
                 let suggestion = try await enrichment.enrich(raw, using: config.provider, openRouterModel: config.openRouterModel)
-                enqueueReview(suggestion)
+                await deliverTask(title: suggestion.title, body: suggestion.details, priority: suggestion.priority, config: config)
                 return
             } catch {
                 onHaptic(.warning)
@@ -139,7 +136,7 @@ final class CaptureViewModel: ObservableObject {
         await deliverTask(title: raw, body: nil, priority: nil, config: config)
     }
 
-    /// `.note`: KI an + verfügbar → bereinigen; sonst Rohnotiz. Geht direkt raus (kein Review).
+    /// `.note`: KI an + verfügbar → bereinigen; sonst Rohnotiz. Geht direkt raus.
     private func processNote(_ raw: String, config: CaptureRouterConfig) async {
         var title = RawTextTitle.derive(from: raw)
         var body = raw
@@ -156,52 +153,16 @@ final class CaptureViewModel: ObservableObject {
         await deliverNote(title: title, body: body, config: config)
     }
 
-    /// `.auto`: klassifizieren → Task: Review einreihen; Notiz: direkt senden.
+    /// `.auto`: klassifizieren → Task: veredelt direkt anlegen; Notiz: direkt senden.
     private func processAuto(_ raw: String, config: CaptureRouterConfig) async {
         let classification = await router.classify(raw, config: config)
         switch classification.kind {
         case .task:
-            enqueueReview(classification.taskSuggestion)
+            let suggestion = classification.taskSuggestion
+            await deliverTask(title: suggestion.title, body: suggestion.details, priority: suggestion.priority, config: config)
         case .note:
             await deliverNote(title: classification.title, body: classification.body, config: config)
         }
-    }
-
-    /// Legt den (ggf. editierten) Task-Vorschlag aus dem Review an — ebenfalls
-    /// nicht-blockierend; das nächste wartende Review wird sofort gezeigt.
-    func confirm(_ edited: EnrichmentSuggestion) async {
-        let name = edited.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            banner = .failure("Titel darf nicht leer sein.")
-            return
-        }
-        advanceReview()
-        let config = settings.routerConfig
-        inFlight += 1
-        Task {
-            await self.deliverTask(title: name, body: edited.details, priority: edited.priority, config: config)
-            self.inFlight -= 1
-        }
-    }
-
-    /// Verwirft das aktuelle Review und zeigt das nächste wartende (falls vorhanden).
-    func cancelReview() {
-        advanceReview()
-    }
-
-    /// Reiht einen fertigen Task-Vorschlag ein: zeigt ihn, oder hängt ihn hinten an,
-    /// falls schon ein Review offen ist — so geht bei schneller Mehrfacherfassung keiner verloren.
-    private func enqueueReview(_ suggestion: EnrichmentSuggestion) {
-        if review == nil {
-            review = suggestion
-        } else {
-            reviewBacklog.append(suggestion)
-        }
-    }
-
-    /// Schaltet auf das nächste wartende Review weiter (oder schließt das Sheet).
-    private func advanceReview() {
-        review = reviewBacklog.isEmpty ? nil : reviewBacklog.removeFirst()
     }
 
     // MARK: - Zustellen (über den Router, mit Offline-Pufferung)

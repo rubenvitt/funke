@@ -5,7 +5,7 @@ import UIKit
 
 /// Schnellerfassung im Glut-Look: Wortmarke, großes Eingabefeld (sofort
 /// fokussiert), runder Senden-Button mit Funken-Animation, Mic-Toggle,
-/// Modus-Picker, „Letzte Funken"-Liste, Toast und das Review-Sheet.
+/// Modus-Picker, „Letzte Funken"-Liste und Toast.
 struct CaptureView: View {
     @ObservedObject var viewModel: CaptureViewModel
     @FocusState private var isTextFocused: Bool
@@ -42,17 +42,6 @@ struct CaptureView: View {
         }
         // Senden löst eine kurze Funken-Animation aus.
         .onChange(of: viewModel.sparkBurst) { _, _ in emitParticles() }
-        .sheet(item: reviewBinding) { identified in
-            EnrichmentReviewView(
-                suggestion: identified.suggestion,
-                onConfirm: { edited in
-                    Task { await viewModel.confirm(edited) }
-                },
-                onCancel: {
-                    viewModel.cancelReview()
-                }
-            )
-        }
     }
 
     // MARK: - Aufbau
@@ -367,14 +356,6 @@ struct CaptureView: View {
             particles.removeAll { ids.contains($0.id) }
         }
     }
-
-    /// Brückt `EnrichmentSuggestion?` (nicht `Identifiable`) auf ein `Identifiable`-Wrapper-Binding.
-    private var reviewBinding: Binding<IdentifiedSuggestion?> {
-        Binding(
-            get: { viewModel.review.map(IdentifiedSuggestion.init) },
-            set: { newValue in viewModel.review = newValue?.suggestion }
-        )
-    }
 }
 
 // MARK: - Funken-Partikel-Modell & -View
@@ -405,16 +386,6 @@ private struct SparkParticleView: View {
                 }
             }
     }
-}
-
-/// Hüllt einen `EnrichmentSuggestion` in eine `Identifiable`-Identität für `.sheet(item:)`.
-/// Stabile `id`: Es gibt immer nur **ein** Review-Sheet gleichzeitig. Eine pro
-/// `get` neu erzeugte UUID würde SwiftUI das Sheet während der Anzeige neu
-/// präsentieren lassen (Flackern / verworfene Edits).
-private struct IdentifiedSuggestion: Identifiable {
-    let id = 0
-    let suggestion: EnrichmentSuggestion
-    init(_ suggestion: EnrichmentSuggestion) { self.suggestion = suggestion }
 }
 
 #if os(iOS)

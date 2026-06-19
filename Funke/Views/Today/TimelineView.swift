@@ -1,9 +1,13 @@
 import SwiftUI
 
 /// Tages-Timeline im Glut-Look: links eine Stunden-Gutter, daneben zwei Spuren —
-/// eine schmale Kalender-Spur (read-only Termine) und eine breite Aufgaben-Spur
-/// mit ziehbaren Fokus-Blöcken. Auf iOS lassen sich Aufgaben per Drag verschieben
-/// (15-Minuten-Raster); auf anderen Plattformen ist die Ansicht rein darstellend.
+/// eine schmale Kalender-Spur (read-only Termine des gewählten Kalenders) und eine
+/// breite Aufgaben-Spur mit Fokus-Blöcken. Auf iOS lassen sich Aufgaben nach kurzem
+/// Long-Press per Drag verschieben (15-Minuten-Raster); sonst rein darstellend.
+///
+/// Bewusst ohne `GeometryReader`: alle Elemente werden über `padding(.leading)` +
+/// `maxWidth:.infinity` + `offset(y:)` positioniert und am Rand geklippt — so kann
+/// nichts horizontal überlaufen (kein versehentliches Querscrollen).
 struct TimelineView: View {
     let events: [CalendarEvent]
     /// Nur Aufgaben MIT `startDate` heute.
@@ -20,8 +24,8 @@ struct TimelineView: View {
     private let ppm: CGFloat = 1.0
 
     // Spaltenmaße.
-    private let gutterW: CGFloat = 30
-    private let calW: CGFloat = 84
+    private let gutterW: CGFloat = 34
+    private let calW: CGFloat = 88
     private let gap: CGFloat = 8
 
     // Aktiver Drag (nur eine Karte gleichzeitig).
@@ -29,75 +33,76 @@ struct TimelineView: View {
     @State private var dragY: CGFloat = 0
 
     private var totalHeight: CGFloat { CGFloat((h1 - h0) * 60) * ppm }
+    private var taskInset: CGFloat { gutterW + calW + gap }
 
     var body: some View {
-        GeometryReader { geo in
-            let taskX = gutterW + calW + gap
-            let taskW = max(80, geo.size.width - taskX)
+        ZStack(alignment: .topLeading) {
+            grid
+            nowLine
 
-            ZStack(alignment: .topLeading) {
-                grid(width: geo.size.width)
-
-                // Kalender-Spur
-                ForEach(events) { event in
-                    calendarCard(event)
-                        .frame(width: calW, height: height(forMinutes: durationMinutes(event)), alignment: .topLeading)
-                        .offset(x: gutterW, y: max(0, y(forMinutes: minutes(event.start))))
+            // Kalender-Spur — feste Spalte via HStack, nur vertikaler Offset.
+            ForEach(visibleEvents) { item in
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: gutterW)
+                    calendarCard(item.event).frame(width: calW)
+                    Spacer(minLength: 0)
                 }
-
-                // Aufgaben-Spur
-                ForEach(tasks) { task in
-                    let base = minutes(task.start ?? now)
-                    let isDragging = draggingID == task.id
-                    taskCard(task, baseMinutes: base)
-                        .frame(width: taskW, height: height(forMinutes: task.durationMinutes), alignment: .topLeading)
-                        .offset(x: taskX, y: max(0, y(forMinutes: base) + (isDragging ? dragY : 0)))
-                        .shadow(color: .black.opacity(isDragging ? 0.18 : 0), radius: isDragging ? 10 : 0, x: 0, y: isDragging ? 6 : 0)
-                        .zIndex(isDragging ? 1 : 0)
-                }
-
-                nowLine(width: geo.size.width)
+                .frame(height: item.height)
+                .offset(y: item.top)
             }
-            .frame(width: geo.size.width, height: totalHeight, alignment: .topLeading)
+
+            // Aufgaben-Spur — füllt die Restbreite, nur vertikaler Offset.
+            ForEach(visibleTasks) { item in
+                let isDragging = draggingID == item.task.id
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: taskInset)
+                    taskCard(item.task, baseMinutes: item.startMinutes)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(height: item.height)
+                .offset(y: item.top + (isDragging ? dragY : 0))
+                .shadow(color: .black.opacity(isDragging ? 0.18 : 0), radius: isDragging ? 10 : 0, x: 0, y: isDragging ? 6 : 0)
+                .zIndex(isDragging ? 1 : 0)
+            }
         }
-        .frame(height: totalHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: totalHeight, alignment: .topLeading)
+        .clipped()
     }
 
     // MARK: - Raster & Now-Linie
 
-    private func grid(width: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(h0...h1, id: \.self) { hour in
-                let lineY = y(forMinutes: hour * 60)
-                // Stunden-Trennlinie
-                Rectangle()
-                    .fill(FunkeTheme.line2)
-                    .frame(width: max(0, width - gutterW), height: 1)
-                    .offset(x: gutterW, y: lineY)
-                // Stunden-Label in der Gutter
+    private var grid: some View {
+        ForEach(h0...h1, id: \.self) { hour in
+            HStack(spacing: 0) {
                 Text(String(format: "%02d", hour))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(FunkeTheme.dim)
-                    .offset(x: 0, y: lineY - 6)
+                    .frame(width: gutterW, alignment: .leading)
+                Rectangle()
+                    .fill(FunkeTheme.line2)
+                    .frame(height: 1)
             }
+            .offset(y: y(forMinutes: hour * 60))
         }
     }
 
     @ViewBuilder
-    private func nowLine(width: CGFloat) -> some View {
+    private var nowLine: some View {
         let nowMin = minutes(now)
         if nowMin >= h0 * 60 && nowMin <= h1 * 60 {
-            let lineY = y(forMinutes: nowMin)
-            ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                Color.clear.frame(width: gutterW)
+                Rectangle().fill(FunkeTheme.red).frame(height: 2)
+            }
+            .overlay(alignment: .leading) {
                 Circle()
                     .fill(FunkeTheme.red)
                     .frame(width: 7, height: 7)
-                    .offset(x: gutterW - 7, y: lineY - 3)
-                Rectangle()
-                    .fill(FunkeTheme.red)
-                    .frame(width: max(0, width - gutterW), height: 2)
-                    .offset(x: gutterW, y: lineY - 1)
+                    .offset(x: gutterW - 3.5)
             }
+            .offset(y: y(forMinutes: nowMin))
+            .zIndex(2)
         }
     }
 
@@ -112,6 +117,7 @@ struct TimelineView: View {
             Text("\(Self.hm.string(from: event.start))–\(Self.hm.string(from: event.end))")
                 .font(.system(size: 10))
                 .foregroundStyle(FunkeTheme.dim)
+                .lineLimit(1)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 7)
@@ -119,7 +125,7 @@ struct TimelineView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(FunkeTheme.surface2, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(alignment: .leading) {
-            Rectangle().fill(FunkeTheme.dim.opacity(0.5)).frame(width: 3)
+            RoundedRectangle(cornerRadius: 1.5).fill(FunkeTheme.dim.opacity(0.55)).frame(width: 3)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -130,7 +136,7 @@ struct TimelineView: View {
         let focus = task.art == .flamme || task.art == .feuer
         let fill = focus ? FunkeTheme.accentSoft : FunkeTheme.surface
         let border = focus ? FunkeTheme.accentLine : FunkeTheme.line2
-        let endDate = (task.start ?? now).addingTimeInterval(TimeInterval(task.durationMinutes * 60))
+        let endDate = (task.startDate ?? now).addingTimeInterval(TimeInterval(task.durationMinutes * 60))
 
         return HStack(alignment: .top, spacing: 8) {
             Button {
@@ -153,10 +159,12 @@ struct TimelineView: View {
                     Text(label)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(FunkeTheme.accent)
+                        .lineLimit(1)
                 }
-                Text("\(Self.hm.string(from: task.start ?? now))–\(Self.hm.string(from: endDate))")
+                Text("\(Self.hm.string(from: task.startDate ?? now))–\(Self.hm.string(from: endDate))")
                     .font(.system(size: 10))
                     .foregroundStyle(FunkeTheme.dim)
+                    .lineLimit(1)
             }
             // Ziehfläche nur über dem Textbereich — Checkbox-Tap löst keinen Drag aus.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -164,8 +172,6 @@ struct TimelineView: View {
             #if os(iOS)
             .gesture(drag(for: task, baseMinutes: baseMinutes))
             #endif
-
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -184,6 +190,45 @@ struct TimelineView: View {
         .opacity(done ? 0.5 : 1)
     }
 
+    // MARK: - Sichtbare, auf das Zeitfenster geklemmte Elemente
+
+    private struct PositionedEvent: Identifiable {
+        let id: String
+        let event: CalendarEvent
+        let top: CGFloat
+        let height: CGFloat
+    }
+
+    private struct PositionedTask: Identifiable {
+        let id: String
+        let task: TodayTask
+        let startMinutes: Int
+        let top: CGFloat
+        let height: CGFloat
+    }
+
+    /// Termine, die das 8–19-Uhr-Fenster schneiden — Position/Höhe darauf geklemmt.
+    private var visibleEvents: [PositionedEvent] {
+        events.compactMap { event in
+            let s = max(minutes(event.start), h0 * 60)
+            let e = min(eventEndMinutes(event), h1 * 60)
+            guard e > s else { return nil }
+            return PositionedEvent(id: event.id, event: event, top: y(forMinutes: s), height: max(28, CGFloat(e - s) * ppm))
+        }
+    }
+
+    /// Aufgaben, deren Startzeit ins Fenster geklemmt wird.
+    private var visibleTasks: [PositionedTask] {
+        tasks.map { task in
+            let raw = minutes(task.startDate ?? now)
+            let start = min(max(raw, h0 * 60), h1 * 60 - 15)
+            return PositionedTask(
+                id: task.id, task: task, startMinutes: start,
+                top: y(forMinutes: start), height: height(forMinutes: task.durationMinutes)
+            )
+        }
+    }
+
     // MARK: - Drag-Logik (iOS)
 
     // Verschieben erst nach kurzem Long-Press aktivieren — sonst „kämpft" der
@@ -196,7 +241,6 @@ struct TimelineView: View {
             .onChanged { value in
                 switch value {
                 case .first(true):
-                    // Long-Press erkannt → Karte zum Ziehen „freigeben".
                     draggingID = task.id
                     dragY = 0
                 case .second(true, let drag):
@@ -212,15 +256,13 @@ struct TimelineView: View {
 
                 let deltaMin = Int((drag.translation.height / ppm).rounded())
                 let raw = baseMinutes + deltaMin
-                // Auf 15-Minuten-Raster runden.
                 let snapped = Int((Double(raw) / 15).rounded()) * 15
-                // In [H0:00, H1:00 − Dauer] klemmen.
                 let lo = h0 * 60
                 let hi = max(lo, h1 * 60 - task.durationMinutes)
                 let clamped = min(max(snapped, lo), hi)
 
                 if clamped != baseMinutes {
-                    let day = Calendar.current.startOfDay(for: task.start ?? now)
+                    let day = Calendar.current.startOfDay(for: task.startDate ?? now)
                     let newStart = Calendar.current.date(byAdding: .minute, value: clamped, to: day) ?? day
                     onReschedule(task, newStart)
                 }
@@ -240,8 +282,8 @@ struct TimelineView: View {
         max(34, CGFloat(durationMin) * ppm)
     }
 
-    private func durationMinutes(_ event: CalendarEvent) -> Int {
-        max(15, Int(event.end.timeIntervalSince(event.start) / 60))
+    private func eventEndMinutes(_ event: CalendarEvent) -> Int {
+        max(minutes(event.start) + 15, minutes(event.end))
     }
 
     /// Minuten seit Mitternacht für ein Datum.
@@ -256,9 +298,4 @@ struct TimelineView: View {
         f.dateFormat = "HH:mm"
         return f
     }()
-}
-
-private extension TodayTask {
-    /// Bequemer Alias — die Timeline arbeitet ausschließlich mit dem geplanten Start.
-    var start: Date? { startDate }
 }

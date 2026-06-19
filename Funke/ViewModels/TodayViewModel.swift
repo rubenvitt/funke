@@ -26,6 +26,8 @@ final class TodayViewModel: ObservableObject {
     @Published private(set) var doneIDs: Set<String> = []
     /// Aktiver Feuersturm-Sprint (Woche X von N), falls vorhanden.
     @Published private(set) var feuersturm: FeuersturmInfo?
+    /// Heutige Termine des gewählten Timeblocking-Kalenders (für die Timeline).
+    @Published private(set) var events: [CalendarEvent] = []
     @Published var isLoading: Bool = false
     @Published var error: String?
 
@@ -75,17 +77,20 @@ final class TodayViewModel: ObservableObject {
 
     private let clickUp: ClickUpClienting
     private let settings: AppSettings
+    private let calendarProvider: CalendarProviding
     private let calendar: Calendar
     private let now: () -> Date
 
     init(
         clickUp: ClickUpClienting,
         settings: AppSettings,
+        calendarProvider: CalendarProviding = CalendarService(),
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init
     ) {
         self.clickUp = clickUp
         self.settings = settings
+        self.calendarProvider = calendarProvider
         self.calendar = calendar
         self.now = now
     }
@@ -113,8 +118,9 @@ final class TodayViewModel: ObservableObject {
             self.error = Self.message(from: error)
         }
 
-        // Feuersturm-Überblick additiv laden (Fehler hier sind nicht blockierend).
+        // Feuersturm-Überblick + Kalender additiv laden (nicht blockierend).
         await loadFeuersturm()
+        events = await calendarProvider.todayEvents(now: now(), calendarID: settings.timeblockCalendarID)
     }
 
     private func loadFeuersturm() async {

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Strukturierter KI-Vorschlag, der aus einem rohen Capture-Text entsteht.
-/// Wird dem Nutzer vor dem Anlegen gezeigt und ist editierbar.
+/// Strukturierter KI-Vorschlag, der aus einem rohen Capture-Text entsteht
+/// und ohne Bestätigungsschritt direkt als Task angelegt wird.
 struct EnrichmentSuggestion: Equatable, Sendable {
     /// Knapper Task-Titel.
     var title: String

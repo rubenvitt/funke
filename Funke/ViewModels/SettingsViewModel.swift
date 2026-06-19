@@ -40,6 +40,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var isLoadingPhoenix: Bool = false
     @Published var phoenixError: String?
 
+    // MARK: - Timeblocking-Kalender
+
+    @Published var calendars: [CalendarInfo] = []
+
     // MARK: - Relay (Notiz-Transport)
 
     /// Spiegel des im Keychain hinterlegten Relay-Tokens (zur Bearbeitung im Feld).
@@ -58,19 +62,23 @@ final class SettingsViewModel: ObservableObject {
     private let clickUp: ClickUpClienting
     private let secrets: SecretStoring
     private let enrichment: EnrichmentServicing
+    private let calendarProvider: CalendarProviding
 
     /// - Note: Gegenüber der Spec-Skizze `init(clickUp:secrets:settings:)` um
-    ///   `enrichment` erweitert, um die Provider-Verfügbarkeit anzuzeigen.
+    ///   `enrichment` (Provider-Verfügbarkeit) und `calendarProvider`
+    ///   (Timeblocking-Kalenderauswahl) erweitert.
     init(
         clickUp: ClickUpClienting,
         secrets: SecretStoring,
         settings: AppSettings,
-        enrichment: EnrichmentServicing
+        enrichment: EnrichmentServicing,
+        calendarProvider: CalendarProviding = CalendarService()
     ) {
         self.clickUp = clickUp
         self.secrets = secrets
         self.settings = settings
         self.enrichment = enrichment
+        self.calendarProvider = calendarProvider
         self.clickUpToken = secrets.string(for: .clickUpToken) ?? ""
         self.anthropicKey = secrets.string(for: .anthropicKey) ?? ""
         self.openRouterKey = secrets.string(for: .openRouterKey) ?? ""
@@ -244,6 +252,16 @@ final class SettingsViewModel: ObservableObject {
         } catch {
             phoenixError = Self.message(from: error)
         }
+    }
+
+    /// Lädt die verfügbaren System-Kalender für die Timeblocking-Auswahl.
+    func loadCalendars() async {
+        calendars = await calendarProvider.availableCalendars()
+    }
+
+    /// Setzt den gewählten Timeblocking-Kalender (`nil` = alle Kalender).
+    func selectTimeblockCalendar(_ id: String?) {
+        settings.timeblockCalendarID = id
     }
 
     // MARK: - Relay (Notiz-Transport)

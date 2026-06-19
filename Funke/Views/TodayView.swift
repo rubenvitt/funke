@@ -6,23 +6,18 @@ import SwiftUI
 struct TodayView: View {
     @ObservedObject var viewModel: TodayViewModel
 
-    /// Heutige Kalendertermine — additiv, blockieren das Laden der Aufgaben nicht.
-    @State private var events: [CalendarEvent] = []
-
     var body: some View {
         NavigationStack {
-            ScrollView {
+            ScrollView(.vertical) {
                 content
                     .padding(.horizontal, 16)
                     .padding(.bottom, 32)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollIndicators(.visible, axes: .vertical)
             .background(FunkeTheme.background)
-            .refreshable {
-                await viewModel.load()
-                events = await CalendarService().todayEvents()
-            }
+            .refreshable { await viewModel.load() }
             .task { await viewModel.load() }
-            .task { events = await CalendarService().todayEvents() }
         }
     }
 
@@ -158,7 +153,7 @@ struct TodayView: View {
                 Text("Fokus · ziehbar").funkeSectionLabel()
             }
             TimelineView(
-                events: events,
+                events: viewModel.events,
                 tasks: viewModel.scheduled.filter { $0.startDate != nil },
                 isDone: viewModel.isDone,
                 onToggle: { task in Task { await viewModel.complete(task) } },

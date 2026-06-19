@@ -16,6 +16,7 @@ struct SettingsView: View {
                 clickUpSection
                 workspaceSection
                 inboxSection
+                timelineSection
                 phoenixSection
                 aiSection
                 relaySection
@@ -27,6 +28,7 @@ struct SettingsView: View {
             .tint(FunkeTheme.accent)
             .navigationTitle("Einstellungen")
             .task { await viewModel.loadPhoenix() }
+            .task { await viewModel.loadCalendars() }
         }
     }
 
@@ -105,6 +107,30 @@ struct SettingsView: View {
                     }
                 }
                 .foregroundStyle(FunkeTheme.accent)
+            }
+        }
+    }
+
+    // MARK: - Tages-Timeline (Timeblocking-Kalender)
+
+    private var timelineSection: some View {
+        Section(
+            header: Text("Tages-Timeline").funkeSectionLabel(),
+            footer: Text("Wähle den Kalender, dessen Termine auf der Heute-Timeline erscheinen.")
+                .font(.footnote)
+                .foregroundStyle(FunkeTheme.dim)
+        ) {
+            if viewModel.calendars.isEmpty {
+                Text("Keine Kalender verfügbar. Erlaube den Kalenderzugriff in den iOS-Einstellungen.")
+                    .font(.footnote)
+                    .foregroundStyle(FunkeTheme.dim)
+            } else {
+                Picker("Timeblocking-Kalender", selection: calendarBinding) {
+                    Text("Alle Kalender").tag(String?.none)
+                    ForEach(viewModel.calendars) { cal in
+                        Text(cal.title).tag(Optional(cal.id))
+                    }
+                }
             }
         }
     }
@@ -301,6 +327,13 @@ struct SettingsView: View {
         Binding(
             get: { settings.activeProvider },
             set: { newValue in Task { await viewModel.selectProvider(newValue) } }
+        )
+    }
+
+    private var calendarBinding: Binding<String?> {
+        Binding(
+            get: { settings.timeblockCalendarID },
+            set: { viewModel.selectTimeblockCalendar($0) }
         )
     }
 

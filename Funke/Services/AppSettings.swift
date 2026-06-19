@@ -13,6 +13,7 @@ final class AppSettings: ObservableObject {
         static let inboxListID = "inboxListID"
         static let inboxListName = "inboxListName"
         static let phoenixListID = "phoenixListID"
+        static let timeblockCalendarID = "timeblockCalendarID"
         static let relayBaseURL = "relayBaseURL"
         static let noteFolder = "noteFolder"
         static let vaultBookmark = "vaultBookmark"
@@ -49,6 +50,10 @@ final class AppSettings: ObservableObject {
     @Published var phoenixListID: String? {
         didSet { Self.write(phoenixListID, Keys.phoenixListID, defaults) }
     }
+    /// Gewählter System-Kalender für die Tages-Timeline (Timeblocking). `nil` = alle.
+    @Published var timeblockCalendarID: String? {
+        didSet { Self.write(timeblockCalendarID, Keys.timeblockCalendarID, defaults) }
+    }
 
     // MARK: - Notiz-Transport (Relay-Server / lokaler Vault)
 
@@ -79,6 +84,7 @@ final class AppSettings: ObservableObject {
         self.inboxListID = defaults.string(forKey: Keys.inboxListID)
         self.inboxListName = defaults.string(forKey: Keys.inboxListName)
         self.phoenixListID = defaults.string(forKey: Keys.phoenixListID) ?? Self.defaultPhoenixListID
+        self.timeblockCalendarID = defaults.string(forKey: Keys.timeblockCalendarID)
         self.relayBaseURL = defaults.string(forKey: Keys.relayBaseURL) ?? ""
         self.noteFolder = defaults.string(forKey: Keys.noteFolder) ?? "Inbox"
         self.vaultBookmark = defaults.data(forKey: Keys.vaultBookmark)
