@@ -1,5 +1,9 @@
 # Funke Raycast-Extension Implementation Plan
 
+> **Historisch (Stand vor 2026-10-12):** Dieses Dokument beschreibt die ClickUp-Anbindung.
+> Funke schreibt Aufgaben inzwischen direkt nach **Zunder** (Sync-API + MCP, keine Prioritäten);
+> ClickUp wurde vollständig entfernt. Aktueller Stand: `README.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eine Raycast-Extension, die Text schnell (inline) oder mehrzeilig (Formular) erfasst und über den bestehenden Funke-`CaptureIntent` (via Apple Shortcut) routet — ohne Logik der Swift-App zu duplizieren.

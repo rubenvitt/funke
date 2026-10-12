@@ -1,5 +1,9 @@
 # Funke — Implementierungs-Spec (für Subagents)
 
+> **Historisch (Stand vor 2026-10-12):** Dieses Dokument beschreibt die ClickUp-Anbindung.
+> Funke schreibt Aufgaben inzwischen direkt nach **Zunder** (Sync-API + MCP, keine Prioritäten);
+> ClickUp wurde vollständig entfernt. Aktueller Stand: `README.md`.
+
 Single source of truth. Der **Spine** (Modelle, Protokolle, Fehler, Settings, Prompt/Parser) ist
 **bereits geschrieben** unter `Funke/Models/` und `Funke/Services/` — NICHT neu anlegen, nur konform
 implementieren. Diese Datei beschreibt die noch fehlenden konkreten Typen + die verifizierten APIs.

@@ -1,13 +1,19 @@
 # Funke
 
-Schnelle Capture- und Tages-App für iOS, die mit **ClickUp** spricht. Erfasse von überall in Sekunden
-einen Gedanken oder eine Aufgabe (Text **oder** Sprache) und sieh + hake deine heutigen Aufgaben ab.
-Schreibt ausschließlich nach ClickUp. Solo-App (kein Multi-User).
+Schnelle Capture- und Tages-App für iOS/macOS/watchOS. Erfasse von überall in Sekunden einen
+Gedanken oder eine Aufgabe (Text **oder** Sprache) und sieh + hake deine heutigen Aufgaben ab.
+**Aufgaben** gehen direkt in die Inbox deiner **Zunder**-Instanz (persönliche Aufgabenverwaltung,
+z. B. `https://zunder.rubeen.dev`), **Notizen** über den Relay-Server bzw. das lokale Vault nach
+Obsidian. Solo-App (kein Multi-User).
 
-- **Quick Capture** – großes Textfeld mit sofortigem Fokus, Mikrofon-Button mit deutscher Live-Transkription, optimistisches Anlegen + **Offline-Queue** (kein stiller Verlust).
-- **Optionale KI-Veredelung** (Default AUS) – roher Text → strukturierter Vorschlag *{Titel, Beschreibung, Priorität, Tag}*, den du vor dem Anlegen prüfst/editierst. Vier Provider wählbar: **Apple On-Device**, **Apple Cloud (Private Cloud Compute)**, **Anthropic (Claude)**, **OpenRouter**.
-- **Heute-Liste** – dir zugewiesen, fällig ≤ heute, offene Status; nach Priorität gruppiert, überfällige hervorgehoben; abhaken setzt den dynamisch ermittelten Erledigt-Status; Pull-to-refresh.
-- **Einstellungen** – ClickUp-Token (Keychain), Workspace + Inbox-Liste per Picker, KI-Keys + Provider.
+- **Quick Capture** – großes Textfeld mit sofortigem Fokus, Mikrofon-Button mit deutscher Live-Transkription, optimistisches Anlegen + **Offline-Queue** (kein stiller Verlust, idempotentes Nachsenden).
+- **Optionale KI-Veredelung** (Default AUS) – roher Text → Einordnung (Aufgabe vs. Notiz) + strukturierter Vorschlag *{Titel, Beschreibung}*, den du vor dem Anlegen prüfst/editierst. Vier Provider wählbar: **Apple On-Device**, **Apple Cloud (Private Cloud Compute)**, **Anthropic (Claude)**, **OpenRouter**.
+- **Heute-Liste** – offene Zunder-Aufgaben (Status `open`, `in_progress`, `blocked`), fällig heute oder früher; gruppiert in **Überfällig** und **Heute**, mit Stelle (Inbox, Lose, Bereich, Projekt); abhaken setzt den Status `done`; Kontextmenü „In Zunder öffnen"; Pull-to-refresh.
+- **Einstellungen** – Zunder-Server-URL + API-Token (Keychain), KI-Keys + Provider, Notiz-Relay/Vault.
+
+> **Keine Prioritäten:** Zunder kennt keine Prioritäten, Zuständigen oder listenspezifischen Status
+> (fester Ablauf: `open`, `in_progress`, `review`, `blocked`, `done`, `dropped`). Funke fragt deshalb
+> weder die KI noch dich nach einer Priorität.
 
 ## Voraussetzungen
 
@@ -30,8 +36,11 @@ xcodebuild -scheme Funke -destination 'platform=iOS Simulator,name=iPhone 17' te
 
 ## Einrichtung in der App
 
-1. **ClickUp-Token:** ClickUp → *Settings → Apps → API Token* erzeugen (Form `pk_…`). In Funke → *Einstellungen* eintragen, **Verbindung testen**.
-2. **Workspace + Inbox-Liste** per Picker wählen (IDs werden nie hart eingetragen). Captures landen in dieser Liste.
+1. **Zunder-Server-URL** in Funke → *Einstellungen → Zunder* eintragen (z. B. `https://zunder.rubeen.dev`, ohne Pfad).
+2. **API-Token:** in der Zunder-Web-UI unter **Tokens** einen Token anlegen (Name z. B. `funke`, Form `zt_…`;
+   er wird nur einmal angezeigt). In Funke eintragen und **Verbindung testen** – das speichert den Token im
+   Schlüsselbund und zeigt den verbundenen Nutzer (`GET /api/me`). Eine Listenwahl gibt es nicht: Aufgaben
+   landen immer in der Zunder-**Inbox**. In Zunders Verlauf erscheinen sie mit der Quelle `api:<Token-Name>`.
 3. **Optional KI:** API-Key(s) eintragen, Provider wählen, KI-Veredelung aktivieren. Default-Provider ist **Apple On-Device** (kostenlos, privat, kein Key). OpenRouter-Default-Modell: `openai/gpt-5-nano` (in den Einstellungen änderbar). Anthropic-Modell: `claude-haiku-4-5`.
 
 ### Apple Cloud (Private Cloud Compute) aktivieren
@@ -68,11 +77,13 @@ MVVM mit dünnem Service-Layer; ViewModels sind über Protokolle gegen Mocks tes
 Funke/
   FunkeApp.swift            @main, hält AppContainer
   AppContainer.swift        Composition-Root (verdrahtet alle Services + ViewModels)
-  Models/                   Priority, EnrichmentSuggestion, TodayTask, ClickUp-Modelle,
-                            PendingCapture, HapticFeedback, AppError (typisierte Fehler)
+  Models/                   EnrichmentSuggestion, TodayTask, Zunder-Modelle (Op, Entwurf, Fälligkeit),
+                            PendingCapture/PendingNote/PendingItem, HapticFeedback, AppError (typisierte Fehler)
   Services/
     KeychainStore           SecretStoring (Security/Keychain)
-    ClickUpClient           ClickUpClienting (REST v2, URLSession)
+    ZunderClient            ZunderClienting (Sync-Push + MCP filter_tasks, URLSession)
+    ZunderOpFactory         UUIDv7, Knoten-ID, Hybrid Logical Clock, Aufgaben-Entwürfe
+    CaptureRouter           Klassifizieren → Zunder bzw. NoteSink, Offline-Queue, Nachsenden
     OfflineQueue            OfflineQueuing (persistente JSON-Queue, actor)
     SpeechTranscriber       SpeechTranscribing (SFSpeechRecognizer de-DE + AVAudioEngine)
     AppSettings             ObservableObject (UserDefaults)
@@ -83,13 +94,39 @@ Funke/
       AnthropicProvider · OpenRouterProvider · AppleOnDeviceProvider · AppleCloudProvider
   ViewModels/               CaptureViewModel, TodayViewModel, SettingsViewModel
   Views/                    RootView, CaptureView, EnrichmentReviewView, TodayView, SettingsView
-FunkeTests/                 ClickUpClient-, Enrichment-/Parser-, OfflineQueue-, CaptureViewModel-Tests
+FunkeTests/                 ZunderClient-, CaptureRouter-, Enrichment-/Parser-, OfflineQueue-Tests
 ```
 
 **Grundsätze:** Secrets nur im Keychain (nie im Code/Repo/Logs). Keine `try?`-Schluckmuster, keine
 Force-Unwraps an Netzgrenzen. Jeder Netzwerk-/Transkriptions-/Auth-Fehler wird sichtbar gemacht. Die KI
-ist additiv und nie blockierend – schlägt sie fehl, bleibt der rohe Text anlegbar. Der Erledigt-Status
-wird je Liste dynamisch über den Statustyp (`closed`, sonst `done`) ermittelt, nie hart angenommen.
+ist additiv und nie blockierend – schlägt sie fehl, bleibt der rohe Text anlegbar.
+
+## Zunder-Anbindung
+
+- **Auth:** `Authorization: Bearer zt_…` (API-Token aus dem Keychain). Bearer-Anfragen brauchen keinen
+  CSRF-Header. „Verbindung testen" ruft `GET /api/me`.
+- **Anlegen:** `POST /api/sync/push` mit Feld-Operationen `title`, `location` (`{"kind":"inbox"}`) und –
+  falls vorhanden – `description` (Markdown). Aufgaben-ID und `op_id`s sind UUIDv7, der HLC hat das Format
+  `<wall_ms 13-stellig>:<Zähler 5-stellig>:<Knoten>`; der Knoten ist `funke-` + 8 Hex-Zeichen, einmal pro
+  Installation erzeugt (UserDefaults). Titel über 500 Zeichen werden gekürzt, der volle Text wandert in die
+  Beschreibung.
+- **Idempotenz / Offline:** Der Entwurf (ID, `op_id`s, HLCs) entsteht **vor** dem Senden. Scheitert der
+  Versand vorübergehend (Netz, 408/429/5xx), wird genau dieser Entwurf gepuffert und später
+  byte-identisch nachgesendet – Zunder nimmt bekannte `op_id`s ohne Wirkung erneut an, ein Timeout
+  erzeugt also keine Duplikate. Lehnt Zunder Operationen ab (`rejected`, deutsche Meldung), wird nicht
+  gepuffert, sondern der Fehler angezeigt; eine bereits gepufferte, abgelehnte Aufgabe wird als Notiz
+  weitergepuffert, damit ihr Inhalt erhalten bleibt.
+- **Migration:** Queue-Einträge aus der ClickUp-Zeit werden weiter gelesen (Titel + Beschreibung, die alte
+  Priorität entfällt) und beim Nachsenden in einen frischen Zunder-Entwurf umgewandelt, der vor dem ersten
+  Senden persistiert wird. Alte ClickUp-Einstellungen (Workspace/Liste) werden beim Start entfernt; den
+  ClickUp-Token im Schlüsselbund nutzt Funke nicht mehr (in ClickUp widerrufen).
+- **Heute:** MCP-Werkzeug `filter_tasks` über `POST /mcp` (zustandslos, ohne `initialize`):
+  `due_before` = heutiger lokaler Kalendertag (inklusive), Status `open`/`in_progress`/`blocked`,
+  sortiert nach Fälligkeit, höchstens 200. Fälligkeiten kommen als `JJJJ-MM-TT` oder RFC 3339 mit Offset.
+  Überfällig = Fälligkeit vor dem heutigen Tagesbeginn.
+- **Abhaken:** eine Operation `status = "done"`; ihr HLC liegt mindestens 1 ms über `updated_at` der
+  Aufgabe, damit sie auch bei Uhrenabweichung gewinnt.
+- **Link:** `<Server-URL>/#/aufgabe/<id>` öffnet die Aufgabe in der Zunder-Web-UI.
 
 ## Provider-Übersicht
 
@@ -102,9 +139,16 @@ wird je Liste dynamisch über den Statustyp (`closed`, sonst `done`) ermittelt, 
 
 ## Tests & Verifikation
 
-Unit-Tests (XCTest) decken ClickUp-Request-Bau + Status-/Prioritäts-Mapping, Offline-Queue
-(Puffern + Replay), CaptureViewModel (Erfolg/Fehler/Offline/KI) und das Anthropic-/OpenRouter-Parsing ab.
-Ausführen mit dem `xcodebuild test`-Befehl oben.
+Unit-Tests (XCTest) decken den Zunder-Client (Request-Bau, Push-Format, HLC/UUIDv7, byte-identisches
+Nachsenden, Ablehnungen, MCP-Heute-Liste inkl. Datums- und RFC-3339-Fälligkeit, Abhaken), den
+CaptureRouter (Routing, Pufferung, Nachsenden inkl. ClickUp-Alteinträgen), die Offline-Queue und das
+Anthropic-/OpenRouter-Parsing ab. Ausführen mit dem `xcodebuild test`-Befehl oben.
+
+Die Foundation-Schicht (Models, Services ohne Keychain/Speech, ViewModels) samt diesen Tests wurde
+zusätzlich unter Linux mit Swift 6.1 (Swift-6-Sprachmodus) gebaut und ausgeführt; der Zunder-Client
+wurde außerdem gegen einen lokal gestarteten Zunder-Server Ende-zu-Ende geprüft (anlegen, identisch
+nachsenden ohne Duplikat, Heute-Liste, abhaken, Ablehnung, 401). SwiftUI-Views, Keychain, Speech und
+die Watch-App sind dort nicht kompilierbar und brauchen den ersten Xcode-Build.
 
 ## Falls der Simulator-Build hakt
 
@@ -123,5 +167,6 @@ Fehlerpunkte:
 2. **Test-Target** (`@testable import Funke`) – wurde geprüft, aber nicht kompiliert. Bei einem
    Mock-Signatur-Drift dem Compiler-Hinweis folgen (Mocks liegen privat in den jeweiligen Testdateien).
 
-Alle übrigen Schichten (Models, `ClickUpClient`, HTTP-Provider, Infrastruktur, ViewModels) sind gegen das
-echte SDK typgecheckt; pbxproj/Scheme sind validiert.
+Alle übrigen Schichten (Models, `ZunderClient`, HTTP-Provider, Infrastruktur, ViewModels) sind
+typgecheckt; pbxproj/Scheme sind validiert (Dateisystem-synchronisierte Gruppen – neue/gelöschte
+Dateien brauchen keine pbxproj-Änderung).

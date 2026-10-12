@@ -75,8 +75,9 @@ Dependency. Für jetzt nicht nötig: iOS-App + Watch teilen nur `WatchCapture.sw
 ## 6. Tests
 
 `FunkeTests` enthält die portierten XCTest-Tests (`CaptureRouterTests`, `OfflineQueueTests`,
-`EnrichmentTests`, `ClickUpClientTests`, `NoteEnrichmentTests`). Die maßgebliche Kern-Coverage
-(61 Foundation-Logik-Tests) liegt im `.verify`-Harness (lief gegen das macOS-SDK).
+`EnrichmentTests`, `ZunderClientTests`, `NoteEnrichmentTests`). Seit dem Umstieg auf Zunder
+laufen diese Foundation-Tests zusätzlich unter Linux (Swift 6.1) in einem Scratch-Paket;
+siehe README, Abschnitt „Tests & Verifikation".
 
 ```bash
 xcodebuild -scheme Funke -destination 'platform=iOS Simulator,name=iPhone 17' test
