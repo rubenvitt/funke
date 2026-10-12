@@ -1,16 +1,24 @@
 import Foundation
 import Combine
 
-/// Eine nach Priorität gruppierte Sektion der Heute-Liste.
-struct PrioritySection: Identifiable, Equatable {
-    /// `nil` = Aufgaben ohne gesetzte Priorität.
-    let priority: Priority?
+/// Eine Sektion der Heute-Liste: überfällig oder heute fällig.
+/// (Zunder kennt keine Prioritäten – gruppiert wird nach Fälligkeit.)
+struct DueSection: Identifiable, Equatable {
+    enum Kind: Int, Equatable {
+        case overdue
+        case today
+    }
+
+    let kind: Kind
     let tasks: [TodayTask]
 
-    var id: Int { priority?.rawValue ?? Int.max }
+    var id: Int { kind.rawValue }
 
     var title: String {
-        priority?.displayName ?? "Ohne Priorität"
+        switch kind {
+        case .overdue: return "Überfällig"
+        case .today: return "Heute"
+        }
     }
 }
 
@@ -18,7 +26,7 @@ struct PrioritySection: Identifiable, Equatable {
 /// Abhaken erfolgt optimistisch und rollt bei Fehlern sichtbar zurück.
 @MainActor
 final class TodayViewModel: ObservableObject {
-    @Published var sections: [PrioritySection] = []
+    @Published var sections: [DueSection] = []
     @Published var isLoading: Bool = false
     @Published var error: String?
 
@@ -27,19 +35,16 @@ final class TodayViewModel: ObservableObject {
         !isLoading && error == nil && sections.isEmpty
     }
 
-    private let clickUp: ClickUpClienting
-    private let settings: AppSettings
+    private let zunder: ZunderClienting
     private let calendar: Calendar
     private let now: () -> Date
 
     init(
-        clickUp: ClickUpClienting,
-        settings: AppSettings,
+        zunder: ZunderClienting,
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init
     ) {
-        self.clickUp = clickUp
-        self.settings = settings
+        self.zunder = zunder
         self.calendar = calendar
         self.now = now
     }
@@ -47,24 +52,14 @@ final class TodayViewModel: ObservableObject {
     // MARK: - Laden
 
     func load() async {
-        guard let teamID = settings.teamID, !teamID.isEmpty else {
-            sections = []
-            error = "Kein Workspace gewählt. Bitte in den Einstellungen einrichten."
-            return
-        }
-
         isLoading = true
         error = nil
         defer { isLoading = false }
 
         do {
-            let user = try await clickUp.authorizedUser()
-            let tasks = try await clickUp.todayTasks(
-                teamID: teamID,
-                assigneeID: user.id,
-                now: now()
-            )
-            sections = Self.group(tasks, referenceDate: now(), calendar: calendar)
+            let reference = now()
+            let tasks = try await zunder.todayTasks(now: reference)
+            sections = Self.group(tasks, referenceDate: reference, calendar: calendar)
         } catch {
             sections = []
             self.error = Self.message(from: error)
@@ -73,26 +68,15 @@ final class TodayViewModel: ObservableObject {
 
     // MARK: - Abhaken (optimistisch)
 
+    /// Setzt den Status in Zunder auf `done` (fester Workflow, kein Nachschlagen nötig).
     func complete(_ task: TodayTask) async {
         let snapshot = sections
         // Optimistisch entfernen.
         remove(task)
         error = nil
 
-        guard let listID = task.listID, !listID.isEmpty else {
-            sections = snapshot
-            error = ClickUpError.noDoneStatus(listName: task.listName).localizedDescription
-            return
-        }
-
         do {
-            let statuses = try await clickUp.listStatuses(listID: listID)
-            guard let done = statuses.doneStatus() else {
-                sections = snapshot
-                error = ClickUpError.noDoneStatus(listName: task.listName).localizedDescription
-                return
-            }
-            try await clickUp.setStatus(taskID: task.id, status: done.name)
+            try await zunder.completeTask(id: task.id, notBefore: task.updatedAt)
         } catch {
             // Rollback bei jedem Fehler — der Nutzer sieht die Aufgabe wieder.
             sections = snapshot
@@ -106,36 +90,32 @@ final class TodayViewModel: ObservableObject {
         sections = sections.compactMap { section in
             let remaining = section.tasks.filter { $0.id != task.id }
             guard !remaining.isEmpty else { return nil }
-            return PrioritySection(priority: section.priority, tasks: remaining)
+            return DueSection(kind: section.kind, tasks: remaining)
         }
     }
 
-    /// Gruppiert nach Priorität (urgent→low, dann „ohne"), innerhalb sortiert
-    /// nach Fälligkeit (überfällig zuerst, frühestes Datum zuerst).
+    /// Gruppiert in „Überfällig" (Fälligkeit vor heute) und „Heute", jeweils
+    /// nach Fälligkeit sortiert (frühestes zuerst, ohne Fälligkeit zuletzt).
     static func group(
         _ tasks: [TodayTask],
         referenceDate: Date,
         calendar: Calendar
-    ) -> [PrioritySection] {
-        let grouped = Dictionary(grouping: tasks) { $0.priority }
-
-        let orderedKeys: [Priority?] = Priority.allCases.map { Optional($0) } + [nil]
-
-        return orderedKeys.compactMap { key -> PrioritySection? in
-            guard let bucket = grouped[key], !bucket.isEmpty else { return nil }
-            let sorted = bucket.sorted { lhs, rhs in
-                let lo = lhs.isOverdue(referenceDate: referenceDate, calendar: calendar)
-                let ro = rhs.isOverdue(referenceDate: referenceDate, calendar: calendar)
-                if lo != ro { return lo }            // Überfällige zuerst.
-                switch (lhs.dueDate, rhs.dueDate) {
-                case let (l?, r?): return l < r       // Frühestes Datum zuerst.
-                case (nil, _?): return false
-                case (_?, nil): return true
-                case (nil, nil): return lhs.name < rhs.name
-                }
+    ) -> [DueSection] {
+        let sorted = tasks.sorted { lhs, rhs in
+            switch (lhs.dueDate, rhs.dueDate) {
+            case let (l?, r?) where l != r: return l < r
+            case (nil, _?): return false
+            case (_?, nil): return true
+            default: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
-            return PrioritySection(priority: key, tasks: sorted)
         }
+        let overdue = sorted.filter { $0.isOverdue(referenceDate: referenceDate, calendar: calendar) }
+        let today = sorted.filter { !$0.isOverdue(referenceDate: referenceDate, calendar: calendar) }
+
+        var sections: [DueSection] = []
+        if !overdue.isEmpty { sections.append(DueSection(kind: .overdue, tasks: overdue)) }
+        if !today.isEmpty { sections.append(DueSection(kind: .today, tasks: today)) }
+        return sections
     }
 
     private static func message(from error: Error) -> String {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ein Element der Offline-Queue: entweder ein ClickUp-Task oder eine Obsidian-Notiz.
+/// Ein Element der Offline-Queue: entweder eine Zunder-Aufgabe oder eine Obsidian-Notiz.
 /// Vereinheitlicht das Puffern beider Capture-Arten (kein stiller Verlust).
 ///
 /// Persistiert mit stabilem, lesbarem Diskriminator (`{"kind":"task","task":{…}}`).

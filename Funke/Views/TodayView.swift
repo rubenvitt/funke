@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Heute fällige/überfällige Aufgaben, nach Priorität gruppiert.
-/// Überfällige sind hervorgehoben; Abhaken via Swipe oder Button.
+/// Heute fällige/überfällige Aufgaben aus Zunder, gruppiert in „Überfällig"
+/// und „Heute". Abhaken (Status `done`) via Swipe oder Button; ein Kontextmenü
+/// öffnet die Aufgabe in der Zunder-Web-UI.
 struct TodayView: View {
     @ObservedObject var viewModel: TodayViewModel
 
@@ -42,6 +43,13 @@ struct TodayView: View {
                                 }
                                 .tint(.green)
                             }
+                            .contextMenu {
+                                if let url = task.webURL {
+                                    Link(destination: url) {
+                                        Label("In Zunder öffnen", systemImage: "safari")
+                                    }
+                                }
+                            }
                     }
                 }
             }
@@ -62,24 +70,29 @@ struct TodayView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(task.name) erledigen")
+            .accessibilityLabel("\(task.title) erledigen")
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.name)
+                Text(task.title)
                     .font(.body)
-                if let due = task.dueDate {
-                    Label(Self.dueText(due), systemImage: overdue ? "exclamationmark.circle.fill" : "calendar")
-                        .font(.caption)
-                        .foregroundStyle(overdue ? .red : .secondary)
+                HStack(spacing: 8) {
+                    if let due = task.due {
+                        Label(Self.dueText(due), systemImage: overdue ? "exclamationmark.circle.fill" : "calendar")
+                            .foregroundStyle(overdue ? .red : .secondary)
+                    }
+                    Label(task.locationName, systemImage: "tray")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+                .font(.caption)
             }
 
             Spacer()
 
-            if let priority = task.priority {
-                Image(systemName: priority.symbolName)
+            if let status = task.statusLabel {
+                Text(status)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel(priority.displayName)
             }
         }
         .padding(.vertical, 2)
@@ -105,7 +118,7 @@ struct TodayView: View {
         }
     }
 
-    private static func dueText(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .omitted)
+    private static func dueText(_ due: ZunderDue) -> String {
+        due.date.formatted(date: .abbreviated, time: due.hasTime ? .shortened : .omitted)
     }
 }

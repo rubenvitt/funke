@@ -98,7 +98,7 @@ final class CaptureViewModel: ObservableObject {
                 return
             }
         }
-        await deliverTask(title: raw, body: nil, priority: nil, config: config)
+        await deliverTask(title: raw, body: nil, config: config)
     }
 
     /// `.note`: KI an + verfügbar → bereinigen; sonst Rohnotiz. Geht direkt raus (kein Review).
@@ -141,7 +141,7 @@ final class CaptureViewModel: ObservableObject {
             return
         }
         review = nil
-        await deliverTask(title: name, body: edited.details, priority: edited.priority, config: settings.routerConfig)
+        await deliverTask(title: name, body: edited.details, config: settings.routerConfig)
     }
 
     /// Bricht eine laufende Review ab; der rohe Text bleibt im Eingabefeld.
@@ -151,16 +151,14 @@ final class CaptureViewModel: ObservableObject {
 
     // MARK: - Zustellen (über den Router, mit Offline-Pufferung)
 
-    private func deliverTask(title: String, body: String?, priority: Priority?, config: CaptureRouterConfig) async {
+    private func deliverTask(title: String, body: String?, config: CaptureRouterConfig) async {
         isWorking = true
         defer { isWorking = false }
         do {
-            let queued = try await router.deliverTask(
-                title: title, body: body ?? "", priority: priority ?? .normal, config: config
-            )
+            let queued = try await router.deliverTask(title: title, body: body ?? "", config: config)
             text = ""
             pendingCount = await queue.all().count
-            banner = .success(queued ? "Keine Verbindung — offline gepuffert." : "Aufgabe angelegt.")
+            banner = .success(queued ? "Keine Verbindung — offline gepuffert." : "Aufgabe in der Zunder-Inbox angelegt.")
             onHaptic(queued ? .warning : .success)
         } catch {
             onHaptic(.error)

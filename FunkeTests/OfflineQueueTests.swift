@@ -20,9 +20,9 @@ final class OfflineQueueTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func task(_ name: String) -> PendingItem { .task(PendingCapture(name: name)) }
+    private func task(_ name: String) -> PendingItem { .task(PendingCapture(title: name, draft: nil)) }
     private func taskName(_ item: PendingItem) -> String? {
-        if case .task(let t) = item { return t.name }
+        if case .task(let t) = item { return t.title }
         return nil
     }
 
@@ -42,7 +42,7 @@ final class OfflineQueueTests: XCTestCase {
 
     func testQueuesTasksAndNotesTogether() async throws {
         let queue = OfflineQueue(directory: directory)
-        try await queue.enqueue(.task(PendingCapture(name: "T")))
+        try await queue.enqueue(.task(PendingCapture(title: "T", draft: nil)))
         try await queue.enqueue(.note(PendingNote(title: "N", body: "B", folder: "Inbox")))
 
         let all = await queue.all()
@@ -57,7 +57,7 @@ final class OfflineQueueTests: XCTestCase {
 
     func testPersistenceAcrossNewInstances() async throws {
         let writer = OfflineQueue(directory: directory)
-        let a = PendingItem.task(PendingCapture(name: "A"))
+        let a = PendingItem.task(PendingCapture(title: "A", draft: nil))
         let b = PendingItem.note(PendingNote(title: "B", body: "x", folder: "Inbox"))
         try await writer.enqueue(a)
         try await writer.enqueue(b)
@@ -81,11 +81,62 @@ final class OfflineQueueTests: XCTestCase {
         XCTAssertEqual(taskName(all[0]), "Alt-Task", "Alte Datei muss als Task migriert werden.")
     }
 
+    func testDecodesLegacyClickUpTaskItemInsideNewFormat() async throws {
+        // `[PendingItem]` aus der ClickUp-Zeit: Task mit name/markdownDescription/priority.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = UUID()
+        let legacy = """
+        [{"kind":"task","task":{"id":"\(id.uuidString)","name":"ClickUp-Rest",
+          "markdownDescription":"Details","priority":1,"createdAt":"2026-06-15T14:30:00Z"}},
+         {"kind":"note","note":{"id":"\(UUID().uuidString)","title":"N","body":"B","folder":"Inbox",
+          "createdAt":"2026-06-15T14:31:00Z"}}]
+        """
+        try Data(legacy.utf8).write(to: directory.appendingPathComponent("queue.json"))
+
+        let queue = OfflineQueue(directory: directory)
+        let all = await queue.all()
+        XCTAssertEqual(all.count, 2, "Alte Einträge dürfen nicht verloren gehen.")
+        guard case .task(let task) = all[0] else { return XCTFail("Erstes Item muss ein Task sein.") }
+        XCTAssertEqual(task.id, id)
+        XCTAssertEqual(task.title, "ClickUp-Rest")
+        XCTAssertEqual(task.description, "Details")
+        XCTAssertNil(task.draft, "Alt-Einträge haben noch keinen Zunder-Entwurf.")
+    }
+
+    func testTaskDraftRoundTripsThroughPersistence() async throws {
+        let factory = ZunderOpFactory(node: "funke-0a1b2c3d", clock: HybridLogicalClock())
+        let draft = factory.makeTaskDraft(title: "Mit Entwurf", description: "md")
+        // Ganze Sekunden: die Queue speichert Datumswerte als ISO 8601 ohne Bruchteile.
+        let createdAt = Date(timeIntervalSince1970: 1_791_793_800)
+        let item = PendingItem.task(PendingCapture(title: "Mit Entwurf", description: "md", createdAt: createdAt, draft: draft))
+        try await OfflineQueue(directory: directory).enqueue(item)
+
+        let reloaded = await OfflineQueue(directory: directory).all()
+        XCTAssertEqual(reloaded, [item], "Entwurf (IDs, op_ids, HLCs) muss unverändert persistiert werden.")
+    }
+
+    func testUpdateReplacesItemInPlaceAndPersists() async throws {
+        let queue = OfflineQueue(directory: directory)
+        let a = PendingCapture(title: "A", draft: nil)
+        let b = PendingItem.task(PendingCapture(title: "B", draft: nil))
+        try await queue.enqueue(.task(a))
+        try await queue.enqueue(b)
+
+        let factory = ZunderOpFactory(node: "funke-0a1b2c3d", clock: HybridLogicalClock())
+        let upgraded = a.withDraft(factory.makeTaskDraft(title: "A", description: nil))
+        try await queue.update(.task(upgraded))
+
+        let reloaded = await OfflineQueue(directory: directory).all()
+        XCTAssertEqual(reloaded.map(\.id), [a.id, b.id], "Position bleibt erhalten.")
+        guard case .task(let first) = reloaded[0] else { return XCTFail("Task erwartet") }
+        XCTAssertNotNil(first.draft)
+    }
+
     func testRemoveDeletesMatchingItemAndPersists() async throws {
         let queue = OfflineQueue(directory: directory)
-        let a = PendingItem.task(PendingCapture(name: "A"))
-        let b = PendingItem.task(PendingCapture(name: "B"))
-        let c = PendingItem.task(PendingCapture(name: "C"))
+        let a = PendingItem.task(PendingCapture(title: "A", draft: nil))
+        let b = PendingItem.task(PendingCapture(title: "B", draft: nil))
+        let c = PendingItem.task(PendingCapture(title: "C", draft: nil))
         try await queue.enqueue(a)
         try await queue.enqueue(b)
         try await queue.enqueue(c)
@@ -105,7 +156,7 @@ final class OfflineQueueTests: XCTestCase {
         var empty = await queue.isEmpty()
         XCTAssertTrue(empty, "Frische Queue (ohne Datei) muss leer sein.")
 
-        let item = PendingItem.task(PendingCapture(name: "X"))
+        let item = PendingItem.task(PendingCapture(title: "X", draft: nil))
         try await queue.enqueue(item)
         empty = await queue.isEmpty()
         XCTAssertFalse(empty, "Nach Enqueue darf die Queue nicht leer sein.")

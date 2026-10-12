@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Einstellungen: ClickUp-Verbindung, Inbox-Auswahl und KI-Provider.
+/// Einstellungen: Zunder-Verbindung, KI-Provider und Notiz-Transport.
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject private var settings: AppSettings
@@ -13,9 +13,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                clickUpSection
-                workspaceSection
-                inboxSection
+                zunderSection
                 aiSection
                 relaySection
             }
@@ -23,11 +21,14 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - ClickUp
+    // MARK: - Zunder
 
-    private var clickUpSection: some View {
-        Section("ClickUp") {
-            SecureField("Personal Token (pk_…)", text: $viewModel.clickUpToken)
+    private var zunderSection: some View {
+        Section("Zunder") {
+            TextField("Server-URL (https://…)", text: $settings.zunderBaseURL)
+                .plainTextInput()
+
+            SecureField("API-Token (zt_…)", text: $viewModel.zunderToken)
                 .plainTextInput()
 
             Button {
@@ -44,58 +45,10 @@ struct SettingsView: View {
             .disabled(viewModel.isTestingConnection)
 
             statusRow(viewModel.connectionStatus)
-        }
-    }
 
-    // MARK: - Workspace
-
-    private var workspaceSection: some View {
-        Section("Workspace") {
-            if viewModel.teams.isEmpty {
-                Text("Nach erfolgreichem Verbindungstest erscheinen hier deine Workspaces.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Workspace", selection: workspaceBinding) {
-                    Text("Bitte wählen").tag(String?.none)
-                    ForEach(viewModel.teams) { team in
-                        Text(team.name).tag(Optional(team.id))
-                    }
-                }
-            }
-
-            if let error = viewModel.hierarchyError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    // MARK: - Inbox
-
-    private var inboxSection: some View {
-        Section("Inbox-Liste") {
-            if let name = settings.inboxListName {
-                Label(name, systemImage: "tray")
-            } else {
-                Text("Noch keine Inbox gewählt.")
-                    .foregroundStyle(.secondary)
-            }
-
-            if !viewModel.spaces.isEmpty {
-                ForEach(viewModel.spaces) { space in
-                    NavigationLink(space.name) {
-                        SpaceListPicker(viewModel: viewModel, space: space)
-                    }
-                }
-            } else if settings.teamID != nil {
-                Button("Spaces laden") {
-                    if let teamID = settings.teamID {
-                        Task { await viewModel.loadSpaces(teamID: teamID) }
-                    }
-                }
-            }
+            Text("Aufgaben landen in der Zunder-Inbox. Das API-Token erzeugst du in der Zunder-Web-UI unter „Tokens“; „Verbindung testen“ speichert es im Schlüsselbund.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -188,16 +141,6 @@ struct SettingsView: View {
 
     // MARK: - Bindings
 
-    private var workspaceBinding: Binding<String?> {
-        Binding(
-            get: { settings.teamID },
-            set: { newValue in
-                guard let id = newValue, let team = viewModel.teams.first(where: { $0.id == id }) else { return }
-                Task { await viewModel.selectTeam(team) }
-            }
-        )
-    }
-
     private var providerBinding: Binding<EnrichmentProviderKind> {
         Binding(
             get: { settings.activeProvider },
@@ -228,83 +171,5 @@ struct SettingsView: View {
                     .foregroundStyle(.orange)
             }
         }
-    }
-}
-
-/// Bohrt von einem Space über Ordner/ordnerlose Listen bis zur Inbox-Liste.
-private struct SpaceListPicker: View {
-    @ObservedObject var viewModel: SettingsViewModel
-    let space: ClickUpSpace
-
-    var body: some View {
-        List {
-            if !viewModel.folderlessLists.isEmpty {
-                Section("Listen") {
-                    ForEach(viewModel.folderlessLists) { list in
-                        listButton(list)
-                    }
-                }
-            }
-            if !viewModel.folders.isEmpty {
-                Section("Ordner") {
-                    ForEach(viewModel.folders) { folder in
-                        NavigationLink(folder.name) {
-                            FolderListPicker(viewModel: viewModel, folder: folder)
-                        }
-                    }
-                }
-            }
-            if viewModel.folders.isEmpty && viewModel.folderlessLists.isEmpty {
-                Text("Keine Listen gefunden.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle(space.name)
-        .task { await viewModel.loadSpaceContents(spaceID: space.id) }
-    }
-
-    private func listButton(_ list: ClickUpList) -> some View {
-        Button {
-            viewModel.selectInbox(list)
-        } label: {
-            HStack {
-                Text(list.name)
-                Spacer()
-                if viewModel.settings.inboxListID == list.id {
-                    Image(systemName: "checkmark").foregroundStyle(.tint)
-                }
-            }
-        }
-    }
-}
-
-/// Listen innerhalb eines Ordners.
-private struct FolderListPicker: View {
-    @ObservedObject var viewModel: SettingsViewModel
-    let folder: ClickUpFolder
-
-    var body: some View {
-        List {
-            if viewModel.folderLists.isEmpty {
-                Text("Keine Listen in diesem Ordner.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(viewModel.folderLists) { list in
-                    Button {
-                        viewModel.selectInbox(list)
-                    } label: {
-                        HStack {
-                            Text(list.name)
-                            Spacer()
-                            if viewModel.settings.inboxListID == list.id {
-                                Image(systemName: "checkmark").foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle(folder.name)
-        .task { await viewModel.loadFolderLists(folderID: folder.id) }
     }
 }

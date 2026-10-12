@@ -2,7 +2,8 @@ import Foundation
 
 /// Identifiziert ein im Keychain abgelegtes Geheimnis.
 enum SecretKey: String, CaseIterable, Sendable {
-    case clickUpToken = "clickup_token"
+    /// API-Token für Zunder (`zt_…`, erzeugt in der Zunder-Web-UI unter „Tokens").
+    case zunderToken = "zunder_token"
     case anthropicKey = "anthropic_key"
     case openRouterKey = "openrouter_key"
     /// Bearer-Token für den Funke-Relay-Server (Notiz-Transport).

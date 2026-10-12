@@ -30,6 +30,11 @@ final class StubURLProtocol: URLProtocol {
     /// Der Body des zuletzt gesehenen Requests, aus dem `httpBodyStream` gelesen.
     private(set) static var lastRequestBody: Data?
 
+    /// Alle gesehenen Requests bzw. Bodies in Reihenfolge (z. B. für
+    /// Wiederholungs-/Idempotenz-Tests über mehrere Aufrufe).
+    private(set) static var requests: [URLRequest] = []
+    private(set) static var requestBodies: [Data?] = []
+
     // MARK: Test-Helfer
 
     /// Setzt sämtlichen Stub-Zustand zurück. In `setUp()`/`tearDown()` aufrufen.
@@ -37,6 +42,8 @@ final class StubURLProtocol: URLProtocol {
         queue.removeAll()
         lastRequest = nil
         lastRequestBody = nil
+        requests.removeAll()
+        requestBodies.removeAll()
     }
 
     /// Reiht eine Erfolgsantwort mit frei wählbarem Statuscode ein.
@@ -55,7 +62,7 @@ final class StubURLProtocol: URLProtocol {
         headers: [String: String]? = ["Content-Type": "application/json"]
     ) {
         // URL ist hier irrelevant; die Response trägt nur Status + Header.
-        let url = URL(string: "https://api.clickup.com/api/v2")!
+        let url = URL(string: "https://stub.invalid")!
         guard let response = HTTPURLResponse(
             url: url,
             statusCode: statusCode,
@@ -89,6 +96,8 @@ final class StubURLProtocol: URLProtocol {
         // Body aus dem Stream lesen (httpBody ist zu diesem Zeitpunkt nil).
         Self.lastRequest = request
         Self.lastRequestBody = Self.readBody(from: request)
+        Self.requests.append(request)
+        Self.requestBodies.append(Self.lastRequestBody)
 
         guard !Self.queue.isEmpty else {
             let error = NSError(

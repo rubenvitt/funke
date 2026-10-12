@@ -10,7 +10,7 @@ import UIKit
 final class AppContainer: ObservableObject {
     let appSettings: AppSettings
     let secrets: SecretStoring
-    let clickUp: ClickUpClienting
+    let zunder: ZunderClienting
     let enrichment: EnrichmentServicing
     let queue: OfflineQueuing
     let transcriber: SpeechTranscriber
@@ -24,14 +24,15 @@ final class AppContainer: ObservableObject {
     init() {
         let keychain = KeychainStore()
         let settings = AppSettings()
-        let clickUpClient = ClickUpClient(secrets: keychain)
+        let drafts = ZunderOpFactory(node: ZunderNodeID.load(from: .standard))
+        let zunderClient = Self.makeZunderClient(secrets: keychain, factory: drafts)
         let enrichmentService = EnrichmentService(secrets: keychain)
         let offlineQueue = OfflineQueue()
         let speech = SpeechTranscriber()
 
         self.secrets = keychain
         self.appSettings = settings
-        self.clickUp = clickUpClient
+        self.zunder = zunderClient
         self.enrichment = enrichmentService
         self.queue = offlineQueue
         self.transcriber = speech
@@ -43,7 +44,8 @@ final class AppContainer: ObservableObject {
         self.noteSink = sink
 
         let captureRouter = CaptureRouter(
-            clickUp: clickUpClient, noteSink: sink, queue: offlineQueue, enrichment: enrichmentService
+            zunder: zunderClient, drafts: drafts, noteSink: sink, queue: offlineQueue,
+            enrichment: enrichmentService
         )
         self.router = captureRouter
 
@@ -59,12 +61,22 @@ final class AppContainer: ObservableObject {
                 #endif
             }
         )
-        self.today = TodayViewModel(clickUp: clickUpClient, settings: settings)
+        self.today = TodayViewModel(zunder: zunderClient)
         self.settingsViewModel = SettingsViewModel(
-            clickUp: clickUpClient,
+            zunder: zunderClient,
             secrets: keychain,
             settings: settings,
             enrichment: enrichmentService
+        )
+    }
+
+    /// Baut den Zunder-Client. Die Server-URL wird bei jedem Aufruf frisch aus
+    /// UserDefaults gelesen (Änderungen in den Einstellungen greifen sofort).
+    nonisolated static func makeZunderClient(secrets: SecretStoring, factory: ZunderOpFactory) -> ZunderClient {
+        ZunderClient(
+            secrets: secrets,
+            baseURL: { UserDefaults.standard.string(forKey: AppSettings.zunderBaseURLKey) },
+            factory: factory
         )
     }
 

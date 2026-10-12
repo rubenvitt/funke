@@ -1,45 +1,52 @@
 import Foundation
 
-/// Eine heute fällige oder überfällige Aufgabe aus ClickUp,
+/// Eine heute fällige oder überfällige, offene Aufgabe aus Zunder,
 /// aufbereitet für die Heute-Liste.
 struct TodayTask: Identifiable, Equatable, Sendable, Hashable {
     let id: String
-    let name: String
-    let priority: Priority?
-    let dueDate: Date?
-    /// Name des aktuellen Status (z. B. "to do").
-    let statusName: String
-    /// ClickUp-Statustyp: open | custom | closed | done.
-    let statusType: String
-    /// Liste, zu der die Aufgabe gehört – nötig, um den korrekten
-    /// Erledigt-Status dynamisch zu ermitteln.
-    let listID: String?
-    let listName: String?
-    let url: String?
+    let title: String
+    /// Zunder-Statuscode: open | in_progress | blocked (andere werden nicht geladen).
+    let status: String
+    let due: ZunderDue?
+    /// Anzeigename der wirksamen Stelle (Inbox, Lose, Bereich oder Projekt).
+    let locationName: String
+    /// Letzte Änderung laut Server; hebt den HLC beim Abhaken darüber.
+    let updatedAt: Date?
+    /// Link in die Zunder-Web-UI (`<Server>/#/aufgabe/<id>`).
+    let webURL: URL?
 
     init(
         id: String,
-        name: String,
-        priority: Priority?,
-        dueDate: Date?,
-        statusName: String,
-        statusType: String,
-        listID: String?,
-        listName: String?,
-        url: String?
+        title: String,
+        status: String,
+        due: ZunderDue?,
+        locationName: String,
+        updatedAt: Date? = nil,
+        webURL: URL? = nil
     ) {
         self.id = id
-        self.name = name
-        self.priority = priority
-        self.dueDate = dueDate
-        self.statusName = statusName
-        self.statusType = statusType
-        self.listID = listID
-        self.listName = listName
-        self.url = url
+        self.title = title
+        self.status = status
+        self.due = due
+        self.locationName = locationName
+        self.updatedAt = updatedAt
+        self.webURL = webURL
     }
 
-    /// True, wenn die Fälligkeit vor dem heutigen Tagesbeginn liegt.
+    var dueDate: Date? { due?.date }
+
+    /// Deutscher Anzeigename des Status (nur für nicht-„offen" sichtbar).
+    var statusLabel: String? {
+        switch status {
+        case "in_progress": return "In Arbeit"
+        case "blocked": return "Blockiert"
+        case "review": return "Review"
+        default: return nil
+        }
+    }
+
+    /// True, wenn die Fälligkeit vor dem heutigen Tagesbeginn liegt
+    /// (Zunder vergleicht Fälligkeiten nach Kalendertag).
     func isOverdue(referenceDate: Date = Date(), calendar: Calendar = .current) -> Bool {
         guard let dueDate else { return false }
         return dueDate < calendar.startOfDay(for: referenceDate)

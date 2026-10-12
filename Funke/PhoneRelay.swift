@@ -47,7 +47,7 @@ final class PhoneRelay: NSObject, WCSessionDelegate {
                 }
                 WCSession.default.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: label))
             } catch {
-                // Nicht-Transport-Fehler (z. B. fehlende Inbox-Liste): Rohtext puffern,
+                // Nicht-Transport-Fehler (z. B. Zunder nicht eingerichtet oder Ablehnung): Rohtext puffern,
                 // damit nichts verloren geht; beim nächsten App-Start nachgesendet.
                 await services.router.bufferNote(rawText: capture.text, config: config)
                 WCSession.default.transferUserInfo(WatchCapture.ack(id: capture.id, outcome: "note-queued"))

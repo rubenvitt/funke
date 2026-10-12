@@ -13,9 +13,8 @@ enum ClassifyPrompt {
     Veredele die Eingabe zu einem knappen Titel und einem aufgeräumten Body \
     (korrigiere offensichtliche Tipp-/Erkennungsfehler, formatiere sinnvoll, \
     füge aber NICHTS hinzu und bewahre die Bedeutung).
-    Wähle die Priorität konservativ; bei einer Notiz "normal".
     Antworte AUSSCHLIESSLICH als JSON-Objekt – ohne Erklärung, ohne Codeblock:
-    {"kind":"task|note","title":"<knapp>","body":"<aufgeräumt>","priority":"urgent|high|normal|low"}
+    {"kind":"task|note","title":"<knapp>","body":"<aufgeräumt>"}
     Antworte auf Deutsch, falls die Eingabe deutsch ist.
     """
 
@@ -27,10 +26,9 @@ enum ClassifyPrompt {
       "properties": {
         "kind": { "type": "string", "enum": ["task", "note"] },
         "title": { "type": "string" },
-        "body": { "type": "string" },
-        "priority": { "type": "string", "enum": ["urgent", "high", "normal", "low"] }
+        "body": { "type": "string" }
       },
-      "required": ["kind", "title", "body", "priority"]
+      "required": ["kind", "title", "body"]
     }
     """
 
@@ -40,14 +38,14 @@ enum ClassifyPrompt {
 }
 
 /// Tolerant gegenüber Code-Fences und Vor-/Nachtext. Fehlendes/unbekanntes `kind`
-/// fällt konservativ auf `.note` zurück (lieber Notiz als irrtümlicher ClickUp-Task).
+/// fällt konservativ auf `.note` zurück (lieber Notiz als irrtümliche Zunder-Aufgabe).
+/// Zusätzliche Schlüssel (z. B. ein altes `priority`) werden ignoriert.
 enum ClassifyResponseParser {
     private struct Raw: Decodable {
         let kind: String?
         let title: String?
         let body: String?
         let details: String?
-        let priority: String?
     }
 
     static func parse(_ raw: String) throws -> CaptureClassification {
@@ -70,7 +68,6 @@ enum ClassifyResponseParser {
         let kind = CaptureKind(rawValue: (decoded.kind ?? "").lowercased()) ?? .note
         let bodyRaw = (decoded.body ?? decoded.details ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let body = bodyRaw.isEmpty ? title : bodyRaw
-        let priority = decoded.priority.flatMap(Priority.init(aiLabel:)) ?? .normal
-        return CaptureClassification(kind: kind, title: title, body: body, priority: priority)
+        return CaptureClassification(kind: kind, title: title, body: body)
     }
 }
