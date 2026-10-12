@@ -61,6 +61,13 @@ actor OfflineQueue: OfflineQueuing {
         try persist(items)
     }
 
+    func update(_ item: PendingItem) async throws {
+        var items = try loaded()
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        items[index] = item
+        try persist(items)
+    }
+
     func isEmpty() async -> Bool {
         await all().isEmpty
     }

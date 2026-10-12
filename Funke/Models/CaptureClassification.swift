@@ -15,12 +15,10 @@ struct CaptureClassification: Equatable, Sendable {
     let title: String
     /// Aufbereiteter Inhalt (Task-Beschreibung bzw. Notiz-Body).
     let body: String
-    /// Nur bei `.task` relevant; bei `.note` ignoriert der Router sie.
-    let priority: Priority
 
-    /// Als ClickUp-Task-Vorschlag (Body wird zur Markdown-Beschreibung).
+    /// Als Zunder-Aufgaben-Vorschlag (Body wird zur Markdown-Beschreibung).
     var taskSuggestion: EnrichmentSuggestion {
-        EnrichmentSuggestion(title: title, details: body.isEmpty ? nil : body, priority: priority)
+        EnrichmentSuggestion(title: title, details: body.isEmpty ? nil : body)
     }
 
     /// Als Obsidian-Notiz-Vorschlag.

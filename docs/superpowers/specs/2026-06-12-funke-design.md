@@ -1,5 +1,9 @@
 # Funke — Design-Spec (2026-06-12)
 
+> **Historisch (Stand vor 2026-10-12):** Dieses Dokument beschreibt die ClickUp-Anbindung.
+> Funke schreibt Aufgaben inzwischen direkt nach **Zunder** (Sync-API + MCP, keine Prioritäten);
+> ClickUp wurde vollständig entfernt. Aktueller Stand: `README.md`.
+
 Native iOS-App für schnelles Capture (Text + Sprache) nach ClickUp plus eine Heute-Liste. Solo-Nutzer (kein Multi-User). Schreibt **nur** nach ClickUp.
 
 ## Entschiedene Punkte

@@ -9,13 +9,17 @@ final class AppSettings: ObservableObject {
         static let enrichmentEnabled = "enrichmentEnabled"
         static let activeProvider = "activeProvider"
         static let openRouterModel = "openRouterModel"
-        static let teamID = "teamID"
-        static let inboxListID = "inboxListID"
-        static let inboxListName = "inboxListName"
         static let relayBaseURL = "relayBaseURL"
         static let noteFolder = "noteFolder"
         static let vaultBookmark = "vaultBookmark"
     }
+
+    /// UserDefaults-Schlüssel der Zunder-Server-URL. Bewusst `nonisolated`, damit
+    /// der `ZunderClient` sie außerhalb des MainActors frisch lesen kann.
+    nonisolated static let zunderBaseURLKey = "zunderBaseURL"
+
+    /// Schlüssel aus der ClickUp-Zeit, die beim Start entfernt werden (harter Umstieg).
+    private static let retiredKeys = ["teamID", "inboxListID", "inboxListName"]
 
     /// Default-OpenRouter-Modell (günstig/schnell für Klassifikation).
     static let defaultOpenRouterModel = "openai/gpt-5-nano"
@@ -31,14 +35,13 @@ final class AppSettings: ObservableObject {
     @Published var openRouterModel: String {
         didSet { defaults.set(openRouterModel, forKey: Keys.openRouterModel) }
     }
-    @Published var teamID: String? {
-        didSet { Self.write(teamID, Keys.teamID, defaults) }
-    }
-    @Published var inboxListID: String? {
-        didSet { Self.write(inboxListID, Keys.inboxListID, defaults) }
-    }
-    @Published var inboxListName: String? {
-        didSet { Self.write(inboxListName, Keys.inboxListName, defaults) }
+
+    // MARK: - Zunder (Aufgaben)
+
+    /// Basis-URL des Zunder-Servers (z. B. `https://zunder.rubeen.dev`).
+    /// Das API-Token liegt im Keychain (`SecretKey.zunderToken`).
+    @Published var zunderBaseURL: String {
+        didSet { Self.write(zunderBaseURL, Self.zunderBaseURLKey, defaults) }
     }
 
     // MARK: - Notiz-Transport (Relay-Server / lokaler Vault)
@@ -66,24 +69,25 @@ final class AppSettings: ObservableObject {
         self.activeProvider = EnrichmentProviderKind(rawValue: defaults.string(forKey: Keys.activeProvider) ?? "")
             ?? .appleOnDevice
         self.openRouterModel = defaults.string(forKey: Keys.openRouterModel) ?? Self.defaultOpenRouterModel
-        self.teamID = defaults.string(forKey: Keys.teamID)
-        self.inboxListID = defaults.string(forKey: Keys.inboxListID)
-        self.inboxListName = defaults.string(forKey: Keys.inboxListName)
+        self.zunderBaseURL = defaults.string(forKey: Self.zunderBaseURLKey) ?? ""
         self.relayBaseURL = defaults.string(forKey: Keys.relayBaseURL) ?? ""
         self.noteFolder = defaults.string(forKey: Keys.noteFolder) ?? "Inbox"
         self.vaultBookmark = defaults.data(forKey: Keys.vaultBookmark)
+        for key in Self.retiredKeys {
+            defaults.removeObject(forKey: key)
+        }
     }
 
-    /// True, sobald eine Inbox-Liste gewählt wurde.
-    var isInboxConfigured: Bool {
-        guard let inboxListID, !inboxListID.isEmpty else { return false }
-        return true
+    /// True, sobald Server-URL und API-Token hinterlegt sind. Aufgaben landen
+    /// immer in der Zunder-Inbox – eine Listenwahl gibt es nicht mehr.
+    func isZunderConfigured(secrets: SecretStoring) -> Bool {
+        !zunderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && secrets.hasValue(for: .zunderToken)
     }
 
     /// Aktuelle nicht-geheime Capture-Konfiguration für den `CaptureRouter`.
     var routerConfig: CaptureRouterConfig {
         CaptureRouterConfig(
-            inboxListID: inboxListID,
             noteFolder: noteFolder,
             enrichmentEnabled: enrichmentEnabled,
             provider: activeProvider,

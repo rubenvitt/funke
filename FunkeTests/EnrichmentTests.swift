@@ -21,49 +21,45 @@ final class EnrichmentTests: XCTestCase {
     // MARK: - EnrichmentResponseParser
 
     func testParserCleanJSON() throws {
-        let raw = #"{"title": "Müll rausbringen", "details": "Dienstagabend", "priority": "high"}"#
+        let raw = #"{"title": "Müll rausbringen", "details": "Dienstagabend"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Müll rausbringen")
         XCTAssertEqual(suggestion.details, "Dienstagabend")
-        XCTAssertEqual(suggestion.priority, .high)
     }
 
     func testParserCodeFences() throws {
         let raw = """
         ```json
-        {"title": "Bericht schreiben", "details": "", "priority": "normal"}
+        {"title": "Bericht schreiben", "details": ""}
         ```
         """
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Bericht schreiben")
         // Leere Strings → nil
         XCTAssertNil(suggestion.details)
-        XCTAssertEqual(suggestion.priority, .normal)
     }
 
     func testParserSurroundingProse() throws {
         let raw = """
         Hier ist deine Aufgabe:
-        {"title": "Arzttermin", "details": "Hausarzt anrufen", "priority": "urgent"}
+        {"title": "Arzttermin", "details": "Hausarzt anrufen"}
         Viel Erfolg!
         """
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Arzttermin")
         XCTAssertEqual(suggestion.details, "Hausarzt anrufen")
-        XCTAssertEqual(suggestion.priority, .urgent)
     }
 
     func testParserDescriptionKeyAlias() throws {
         // „description" wird als Alias für „details" akzeptiert.
-        let raw = #"{"title": "Einkaufen", "description": "Milch und Brot", "priority": "low"}"#
+        let raw = #"{"title": "Einkaufen", "description": "Milch und Brot"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
         XCTAssertEqual(suggestion.title, "Einkaufen")
         XCTAssertEqual(suggestion.details, "Milch und Brot")
-        XCTAssertEqual(suggestion.priority, .low)
     }
 
     func testParserMissingTitleThrows() {
-        let raw = #"{"details": "Etwas", "priority": "normal"}"#
+        let raw = #"{"details": "Etwas"}"#
         XCTAssertThrowsError(try EnrichmentResponseParser.parse(raw)) { error in
             guard case EnrichmentError.invalidResponse = error else {
                 return XCTFail("Erwartete .invalidResponse, bekam \(error)")
@@ -71,10 +67,33 @@ final class EnrichmentTests: XCTestCase {
         }
     }
 
-    func testParserInvalidPriorityFallsBackToNormal() throws {
-        let raw = #"{"title": "Aufgabe", "details": "", "priority": "blubb"}"#
+    func testParserIgnoresLegacyPriorityKey() throws {
+        // Ältere Modelle/Prompts liefern evtl. noch `priority` – wird ignoriert.
+        let raw = #"{"title": "Aufgabe", "details": "", "priority": "urgent"}"#
         let suggestion = try EnrichmentResponseParser.parse(raw)
-        XCTAssertEqual(suggestion.priority, .normal)
+        XCTAssertEqual(suggestion, EnrichmentSuggestion(title: "Aufgabe", details: nil))
+    }
+
+    func testSchemasNoLongerContainPriority() {
+        XCTAssertFalse(EnrichmentPrompt.jsonSchemaString.contains("priority"))
+        XCTAssertFalse(ClassifyPrompt.jsonSchemaString.contains("priority"))
+        XCTAssertFalse(EnrichmentPrompt.systemInstruction.contains("Priorität"))
+        XCTAssertFalse(ClassifyPrompt.systemInstruction.contains("Priorität"))
+    }
+
+    // MARK: - ClassifyResponseParser
+
+    func testClassifyParserReadsKindTitleBody() throws {
+        let raw = #"{"kind": "task", "title": "Zahnarzt", "body": "anrufen", "priority": "high"}"#
+        let result = try ClassifyResponseParser.parse(raw)
+        XCTAssertEqual(result, CaptureClassification(kind: .task, title: "Zahnarzt", body: "anrufen"))
+    }
+
+    func testClassifyParserUnknownKindFallsBackToNote() throws {
+        let raw = #"{"kind": "irgendwas", "title": "Gedanke", "body": ""}"#
+        let result = try ClassifyResponseParser.parse(raw)
+        XCTAssertEqual(result.kind, .note)
+        XCTAssertEqual(result.body, "Gedanke", "Leerer Body fällt auf den Titel zurück")
     }
 
     // MARK: - Anthropic: Request-Bau
@@ -82,7 +101,7 @@ final class EnrichmentTests: XCTestCase {
     func testAnthropicRequestBuilding() async throws {
         StubURLProtocol.enqueue(
             statusCode: 200,
-            json: anthropicSuccessJSON(title: "Test", priority: "normal")
+            json: anthropicSuccessJSON(title: "Test")
         )
         let secrets = MockSecretStore(values: [.anthropicKey: "sk-ant-test"])
         let provider = AnthropicProvider(secrets: secrets, session: StubURLProtocol.makeSession())
@@ -117,14 +136,13 @@ final class EnrichmentTests: XCTestCase {
     func testAnthropicResponseParsing() async throws {
         StubURLProtocol.enqueue(
             statusCode: 200,
-            json: anthropicSuccessJSON(title: "Steuererklärung", priority: "high")
+            json: anthropicSuccessJSON(title: "Steuererklärung")
         )
         let secrets = MockSecretStore(values: [.anthropicKey: "sk-ant-test"])
         let provider = AnthropicProvider(secrets: secrets, session: StubURLProtocol.makeSession())
 
         let suggestion = try await provider.enrich("egal")
         XCTAssertEqual(suggestion.title, "Steuererklärung")
-        XCTAssertEqual(suggestion.priority, .high)
     }
 
     func testAnthropicEmptyInputThrows() async {
@@ -172,7 +190,7 @@ final class EnrichmentTests: XCTestCase {
     func testOpenRouterRequestBuilding() async throws {
         StubURLProtocol.enqueue(
             statusCode: 200,
-            json: openRouterSuccessJSON(title: "Test", priority: "normal")
+            json: openRouterSuccessJSON(title: "Test")
         )
         let secrets = MockSecretStore(values: [.openRouterKey: "sk-or-test"])
         let provider = OpenRouterProvider(
@@ -214,7 +232,7 @@ final class EnrichmentTests: XCTestCase {
     func testOpenRouterResponseParsing() async throws {
         StubURLProtocol.enqueue(
             statusCode: 200,
-            json: openRouterSuccessJSON(title: "Rechnung zahlen", priority: "urgent")
+            json: openRouterSuccessJSON(title: "Rechnung zahlen")
         )
         let secrets = MockSecretStore(values: [.openRouterKey: "sk-or-test"])
         let provider = OpenRouterProvider(
@@ -225,7 +243,6 @@ final class EnrichmentTests: XCTestCase {
 
         let suggestion = try await provider.enrich("egal")
         XCTAssertEqual(suggestion.title, "Rechnung zahlen")
-        XCTAssertEqual(suggestion.priority, .urgent)
     }
 
     func testOpenRouterHTTPErrorMapsMessage() async {
@@ -280,15 +297,15 @@ final class EnrichmentTests: XCTestCase {
         return try XCTUnwrap(object as? [String: Any], "Body ist kein JSON-Objekt.")
     }
 
-    private func anthropicSuccessJSON(title: String, priority: String) -> String {
-        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\"}"#
+    private func anthropicSuccessJSON(title: String) -> String {
+        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\"}"#
         return """
         {"content": [{"type": "text", "text": "\(inner)"}], "stop_reason": "end_turn"}
         """
     }
 
-    private func openRouterSuccessJSON(title: String, priority: String) -> String {
-        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\", \"priority\": \"\#(priority)\"}"#
+    private func openRouterSuccessJSON(title: String) -> String {
+        let inner = #"{\"title\": \"\#(title)\", \"details\": \"\"}"#
         return """
         {"choices": [{"message": {"content": "\(inner)"}}]}
         """

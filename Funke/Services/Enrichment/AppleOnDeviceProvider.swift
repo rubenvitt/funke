@@ -11,30 +11,11 @@ import FoundationModels
 
 @available(iOS 26.0, macOS 26.0, *)
 @Generable
-enum DraftPriority {
-    case urgent, high, normal, low
-
-    /// Totale Abbildung ohne Raw-Value – überlebt, falls `@Generable` keine
-    /// Raw-Value-Enums akzeptiert (im CLT-Makro-Probe nicht verifizierbar).
-    var asPriority: Priority {
-        switch self {
-        case .urgent: return .urgent
-        case .high: return .high
-        case .normal: return .normal
-        case .low: return .low
-        }
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, *)
-@Generable
 struct EnrichmentDraft {
     @Guide(description: "Knapper Aufgaben-Titel")
     var title: String
     @Guide(description: "Beschreibung; leerer String wenn keine")
     var details: String
-    @Guide(description: "Priorität")
-    var priority: DraftPriority
 }
 
 /// Geteilter Notiz-Entwurf für beide Apple-Provider (On-Device + Cloud).
@@ -66,8 +47,7 @@ extension EnrichmentDraft {
     func toSuggestion() -> EnrichmentSuggestion {
         EnrichmentSuggestion(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            details: AppleModelSupport.nonEmpty(details),
-            priority: priority.asPriority
+            details: AppleModelSupport.nonEmpty(details)
         )
     }
 }
@@ -95,8 +75,6 @@ struct ClassifyDraft {
     var title: String
     @Guide(description: "Aufgeräumter Body; bei Notizen der ausgearbeitete Inhalt")
     var body: String
-    @Guide(description: "Priorität (nur für Aufgaben relevant; bei Notizen normal)")
-    var priority: DraftPriority
 }
 
 @available(iOS 26.0, macOS 26.0, *)
@@ -108,8 +86,7 @@ extension ClassifyDraft {
         return CaptureClassification(
             kind: kind.asKind,
             title: trimmedTitle,
-            body: trimmedBody.isEmpty ? trimmedTitle : trimmedBody,
-            priority: priority.asPriority
+            body: trimmedBody.isEmpty ? trimmedTitle : trimmedBody
         )
     }
 }

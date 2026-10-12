@@ -1,5 +1,9 @@
 # Funke Raycast-Extension — Design
 
+> **Historisch (Stand vor 2026-10-12):** Dieses Dokument beschreibt die ClickUp-Anbindung.
+> Funke schreibt Aufgaben inzwischen direkt nach **Zunder** (Sync-API + MCP, keine Prioritäten);
+> ClickUp wurde vollständig entfernt. Aktueller Stand: `README.md`.
+
 **Datum:** 2026-06-16
 **Status:** Approved (Design)
 

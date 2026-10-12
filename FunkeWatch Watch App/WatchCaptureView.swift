@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Quick-Capture auf der Watch: Diktat-Feld + Senden. Klassifikation und Vault-/
-/// ClickUp-Routing übernimmt das iPhone (Relay). Texteingabe öffnet auf watchOS
+/// Zunder-Routing übernimmt das iPhone (Relay). Texteingabe öffnet auf watchOS
 /// automatisch Diktat/Scribble.
 struct WatchCaptureView: View {
     @ObservedObject private var relay = WatchRelay.shared

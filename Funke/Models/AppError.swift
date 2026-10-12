@@ -1,36 +1,51 @@
 import Foundation
 
-/// Fehler aus der ClickUp-Kommunikation. Bewusst `Equatable` (keine rohen
+/// Fehler aus der Zunder-Kommunikation. Bewusst `Equatable` (keine rohen
 /// `Error`-Werte gespeichert), damit ViewModels testbar bleiben.
-enum ClickUpError: LocalizedError, Equatable {
+enum ZunderError: LocalizedError, Equatable {
     case missingToken
     case notConfigured(String)
     case invalidURL
     case transport(String)
     case http(status: Int, message: String?)
+    /// Zunder hat Operationen abgelehnt (inhaltlicher Fehler, deutsche Server-Meldung).
+    /// Nicht wiederholbar – eine Wiederholung würde identisch abgelehnt.
+    case rejected(String)
     case decoding(String)
-    case noDoneStatus(listName: String?)
 
     var errorDescription: String? {
         switch self {
         case .missingToken:
-            return "Kein ClickUp-Token hinterlegt. Bitte in den Einstellungen eintragen."
+            return "Kein Zunder-API-Token hinterlegt. Bitte in den Einstellungen eintragen."
         case .notConfigured(let what):
-            return "ClickUp ist nicht vollständig eingerichtet: \(what)."
+            return "Zunder ist nicht vollständig eingerichtet: \(what)."
         case .invalidURL:
-            return "Interner Fehler: ungültige ClickUp-URL."
+            return "Ungültige Zunder-Server-URL. Bitte in den Einstellungen prüfen (https://…)."
         case .transport(let message):
             return "Netzwerkfehler: \(message)"
         case .http(let status, let message):
             if let message, !message.isEmpty {
-                return "ClickUp-Fehler (\(status)): \(message)"
+                return "Zunder-Fehler (\(status)): \(message)"
             }
-            return "ClickUp-Fehler (HTTP \(status))."
+            return "Zunder-Fehler (HTTP \(status))."
+        case .rejected(let message):
+            return "Von Zunder abgelehnt: \(message)"
         case .decoding(let message):
-            return "Antwort von ClickUp nicht lesbar: \(message)"
-        case .noDoneStatus(let listName):
-            let suffix = listName.map { " in Liste „\($0)“" } ?? ""
-            return "Kein abgeschlossener Status\(suffix) gefunden."
+            return "Antwort von Zunder nicht lesbar: \(message)"
+        }
+    }
+
+    /// Lohnt ein späteres Nachsenden? Transportfehler sowie vorübergehende
+    /// Serverzustände (408, 429, 5xx). Dank persistierter `op_id`s ist ein
+    /// Wiederholen idempotent – auch wenn der erste Versuch doch angekommen war.
+    var isRetryable: Bool {
+        switch self {
+        case .transport:
+            return true
+        case .http(let status, _):
+            return status == 408 || status == 429 || (500...599).contains(status)
+        case .missingToken, .notConfigured, .invalidURL, .rejected, .decoding:
+            return false
         }
     }
 }

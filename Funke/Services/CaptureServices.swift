@@ -10,13 +10,16 @@ enum CaptureServices {
     static func make() -> (router: CaptureRouter, settings: AppSettings) {
         let keychain = KeychainStore()
         let settings = AppSettings()
-        let clickUp = ClickUpClient(secrets: keychain)
+        let drafts = ZunderOpFactory(node: ZunderNodeID.load(from: .standard))
+        let zunder = AppContainer.makeZunderClient(secrets: keychain, factory: drafts)
         let enrichment = EnrichmentService(secrets: keychain)
         let queue = OfflineQueue()
         let sink = LiveNoteSink(resolve: {
             await MainActor.run { AppContainer.buildSink(settings: settings, secrets: keychain) }
         })
-        let router = CaptureRouter(clickUp: clickUp, noteSink: sink, queue: queue, enrichment: enrichment)
+        let router = CaptureRouter(
+            zunder: zunder, drafts: drafts, noteSink: sink, queue: queue, enrichment: enrichment
+        )
         return (router, settings)
     }
 }

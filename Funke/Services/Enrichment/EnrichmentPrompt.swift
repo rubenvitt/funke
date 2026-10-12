@@ -9,10 +9,9 @@ enum EnrichmentPrompt {
     Du wandelst eine rohe Sprach- oder Textnotiz in eine knappe Aufgabe um.
     Antworte AUSSCHLIESSLICH mit einem einzigen JSON-Objekt – ohne Erklärung, \
     ohne Markdown-Codeblock – in genau dieser Form:
-    {"title": "<knapper Titel>", "details": "<optionale Beschreibung oder leer>", \
-    "priority": "urgent|high|normal|low"}
-    Wähle die Priorität konservativ; im Zweifel "normal". Antworte auf Deutsch, \
-    falls die Eingabe deutsch ist. Bei sehr kurzer Eingabe nimm sie als Titel.
+    {"title": "<knapper Titel>", "details": "<optionale Beschreibung oder leer>"}
+    Antworte auf Deutsch, falls die Eingabe deutsch ist. Bei sehr kurzer Eingabe \
+    nimm sie als Titel.
     """
 
     /// JSON-Schema-String für strukturierte Ausgaben (Anthropic output_config /
@@ -23,10 +22,9 @@ enum EnrichmentPrompt {
       "additionalProperties": false,
       "properties": {
         "title": { "type": "string" },
-        "details": { "type": "string" },
-        "priority": { "type": "string", "enum": ["urgent", "high", "normal", "low"] }
+        "details": { "type": "string" }
       },
-      "required": ["title", "details", "priority"]
+      "required": ["title", "details"]
     }
     """
 
@@ -36,13 +34,13 @@ enum EnrichmentPrompt {
 }
 
 /// Tolerant gegenüber Code-Fences, Vor-/Nachtext und beiden Schlüsselnamen
-/// (`details`/`description`). Wirft sichtbare Fehler – nie stilles Schlucken.
+/// (`details`/`description`). Zusätzliche Schlüssel (z. B. ein altes
+/// `priority`) werden ignoriert. Wirft sichtbare Fehler – nie stilles Schlucken.
 enum EnrichmentResponseParser {
     private struct Raw: Decodable {
         let title: String?
         let details: String?
         let description: String?
-        let priority: String?
     }
 
     /// Schält das erste vollständige JSON-Objekt aus einem String.
@@ -79,11 +77,9 @@ enum EnrichmentResponseParser {
         guard !title.isEmpty else {
             throw EnrichmentError.invalidResponse("KI-Antwort ohne Titel.")
         }
-        let priority = decoded.priority.flatMap(Priority.init(aiLabel:)) ?? .normal
         return EnrichmentSuggestion(
             title: title,
-            details: Self.nonEmpty(decoded.details ?? decoded.description),
-            priority: priority
+            details: Self.nonEmpty(decoded.details ?? decoded.description)
         )
     }
 

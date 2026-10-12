@@ -5,7 +5,7 @@ import WatchConnectivity
 
 /// Watch-Sender: erfasste Texte gehen per `transferUserInfo` ans iPhone
 /// (garantierte, verlustfreie Zustellung, auch ohne aktives iPhone). Klassifikation
-/// + Vault/ClickUp-Routing macht das iPhone — die Watch hält keine Secrets.
+/// + Vault/Zunder-Routing macht das iPhone — die Watch hält keine Secrets.
 @MainActor
 final class WatchRelay: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = WatchRelay()

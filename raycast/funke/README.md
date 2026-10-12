@@ -2,11 +2,11 @@
 
 Schnelle Erfassung in [Funke](../../) direkt aus Raycast. Der Text wird über den
 bestehenden `CaptureIntent` der Funke-macOS-App geroutet (Auto-Klassifizierung →
-ClickUp-Task oder Obsidian-Notiz). Es wird keine Logik dupliziert.
+Zunder-Aufgabe in der Inbox oder Obsidian-Notiz). Es wird keine Logik dupliziert.
 
 ## Voraussetzungen
 
-- Funke-macOS-App installiert und konfiguriert (ClickUp-Token / Vault bzw. Relay).
+- Funke-macOS-App installiert und konfiguriert (Zunder-Server-URL + API-Token / Vault bzw. Relay).
 - Raycast installiert.
 
 ## Einmalige Einrichtung: Apple Shortcut „Funke erfassen"

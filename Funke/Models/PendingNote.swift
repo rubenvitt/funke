@@ -2,7 +2,7 @@ import Foundation
 
 /// Eine lokal gepufferte Notiz, die bei fehlender Server-/Netzverbindung
 /// gespeichert und beim nächsten Start/Refresh nachgesendet wird.
-/// Niemals stiller Verlust — das Pendant zu `PendingCapture` (ClickUp-Tasks).
+/// Niemals stiller Verlust — das Pendant zu `PendingCapture` (Zunder-Aufgaben).
 struct PendingNote: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     let title: String

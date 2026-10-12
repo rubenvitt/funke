@@ -1,5 +1,9 @@
 # Funke v2 — Design-Spec (2026-06-15)
 
+> **Historisch (Stand vor 2026-10-12):** Dieses Dokument beschreibt die ClickUp-Anbindung.
+> Funke schreibt Aufgaben inzwischen direkt nach **Zunder** (Sync-API + MCP, keine Prioritäten);
+> ClickUp wurde vollständig entfernt. Aktueller Stand: `README.md`.
+
 Erweitert die iOS-Capture-App (siehe `2026-06-12-funke-design.md`) um vier Stufen:
 **(1)** professioneller Notiz-Transport ohne Flow-Bruch, **(2)** macOS-App, **(3)** App-Intents
 + Auto-Classifier (freihändig im Auto via Siri), **(4)** Watch-App. Alle vier teilen **ein

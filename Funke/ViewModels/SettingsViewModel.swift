@@ -1,15 +1,15 @@
 import Foundation
 import Combine
 
-/// Verwaltet ClickUp-Verbindung, Inbox-Auswahl und KI-Provider-Einstellungen.
+/// Verwaltet Zunder-Verbindung und KI-Provider-Einstellungen.
 /// Token/Schlüssel liegen ausschließlich im Keychain; alle Aktionen melden
 /// sichtbar OK/Fehler — kein stilles Schlucken.
 @MainActor
 final class SettingsViewModel: ObservableObject {
-    // MARK: - ClickUp-Token / Verbindung
+    // MARK: - Zunder-Token / Verbindung
 
-    /// Spiegel des im Keychain hinterlegten Tokens (zur Bearbeitung im Feld).
-    @Published var clickUpToken: String = ""
+    /// Spiegel des im Keychain hinterlegten API-Tokens (zur Bearbeitung im Feld).
+    @Published var zunderToken: String = ""
     @Published var connectionStatus: StatusMessage?
     @Published var isTestingConnection: Bool = false
 
@@ -18,16 +18,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var anthropicKey: String = ""
     @Published var openRouterKey: String = ""
     @Published var keyStatus: StatusMessage?
-
-    // MARK: - Workspace / Inbox
-
-    @Published var teams: [ClickUpTeam] = []
-    @Published var spaces: [ClickUpSpace] = []
-    @Published var folders: [ClickUpFolder] = []
-    @Published var folderlessLists: [ClickUpList] = []
-    @Published var folderLists: [ClickUpList] = []
-    @Published var isLoadingHierarchy: Bool = false
-    @Published var hierarchyError: String?
 
     // MARK: - KI-Verfügbarkeit
 
@@ -49,35 +39,38 @@ final class SettingsViewModel: ObservableObject {
 
     let settings: AppSettings
 
-    private let clickUp: ClickUpClienting
+    private let zunder: ZunderClienting
     private let secrets: SecretStoring
     private let enrichment: EnrichmentServicing
 
-    /// - Note: Gegenüber der Spec-Skizze `init(clickUp:secrets:settings:)` um
-    ///   `enrichment` erweitert, um die Provider-Verfügbarkeit anzuzeigen.
     init(
-        clickUp: ClickUpClienting,
+        zunder: ZunderClienting,
         secrets: SecretStoring,
         settings: AppSettings,
         enrichment: EnrichmentServicing
     ) {
-        self.clickUp = clickUp
+        self.zunder = zunder
         self.secrets = secrets
         self.settings = settings
         self.enrichment = enrichment
-        self.clickUpToken = secrets.string(for: .clickUpToken) ?? ""
+        self.zunderToken = secrets.string(for: .zunderToken) ?? ""
         self.anthropicKey = secrets.string(for: .anthropicKey) ?? ""
         self.openRouterKey = secrets.string(for: .openRouterKey) ?? ""
         self.relayToken = secrets.string(for: .relayToken) ?? ""
     }
 
+    /// Server-URL und Token hinterlegt?
+    var isZunderConfigured: Bool {
+        settings.isZunderConfigured(secrets: secrets)
+    }
+
     // MARK: - Token / Schlüssel speichern
 
-    /// Speichert das ClickUp-Token im Keychain (leer = löschen).
+    /// Speichert das Zunder-API-Token im Keychain (leer = löschen).
     func saveToken() {
-        let trimmed = clickUpToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = zunderToken.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try secrets.setString(trimmed.isEmpty ? nil : trimmed, for: .clickUpToken)
+            try secrets.setString(trimmed.isEmpty ? nil : trimmed, for: .zunderToken)
             connectionStatus = .success(trimmed.isEmpty ? "Token entfernt." : "Token gespeichert.")
         } catch {
             connectionStatus = .failure(Self.message(from: error))
@@ -99,12 +92,12 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Verbindung testen
 
-    /// Testet die Verbindung über `authorizedUser` und lädt anschließend die Workspaces.
+    /// Sichert das eingetragene Token und prüft die Verbindung über `GET /api/me`.
     func testConnection() async {
-        let trimmed = clickUpToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = zunderToken.trimmingCharacters(in: .whitespacesAndNewlines)
         // Aktuellen Tokenstand sichern, damit der Client ihn lesen kann.
         do {
-            try secrets.setString(trimmed.isEmpty ? nil : trimmed, for: .clickUpToken)
+            try secrets.setString(trimmed.isEmpty ? nil : trimmed, for: .zunderToken)
         } catch {
             connectionStatus = .failure(Self.message(from: error))
             return
@@ -114,81 +107,11 @@ final class SettingsViewModel: ObservableObject {
         defer { isTestingConnection = false }
 
         do {
-            let user = try await clickUp.authorizedUser()
-            let name = user.username ?? "Nutzer #\(user.id)"
-            connectionStatus = .success("Verbunden als \(name).")
-            await loadTeams()
+            let user = try await zunder.currentUser()
+            connectionStatus = .success("Verbunden als \(user.displayName).")
         } catch {
             connectionStatus = .failure(Self.message(from: error))
         }
-    }
-
-    // MARK: - Workspace / Inbox laden
-
-    func loadTeams() async {
-        isLoadingHierarchy = true
-        hierarchyError = nil
-        defer { isLoadingHierarchy = false }
-        do {
-            teams = try await clickUp.teams()
-        } catch {
-            hierarchyError = Self.message(from: error)
-        }
-    }
-
-    /// Wählt einen Workspace und lädt dessen Spaces.
-    func selectTeam(_ team: ClickUpTeam) async {
-        settings.teamID = team.id
-        spaces = []
-        folders = []
-        folderlessLists = []
-        folderLists = []
-        await loadSpaces(teamID: team.id)
-    }
-
-    func loadSpaces(teamID: String) async {
-        isLoadingHierarchy = true
-        hierarchyError = nil
-        defer { isLoadingHierarchy = false }
-        do {
-            spaces = try await clickUp.spaces(teamID: teamID)
-        } catch {
-            hierarchyError = Self.message(from: error)
-        }
-    }
-
-    /// Lädt für einen Space die Ordner und die ordnerlosen Listen.
-    func loadSpaceContents(spaceID: String) async {
-        isLoadingHierarchy = true
-        hierarchyError = nil
-        defer { isLoadingHierarchy = false }
-        do {
-            async let foldersResult = clickUp.folders(spaceID: spaceID)
-            async let folderlessResult = clickUp.folderlessLists(spaceID: spaceID)
-            folders = try await foldersResult
-            folderlessLists = try await folderlessResult
-            folderLists = []
-        } catch {
-            hierarchyError = Self.message(from: error)
-        }
-    }
-
-    /// Lädt die Listen eines Ordners.
-    func loadFolderLists(folderID: String) async {
-        isLoadingHierarchy = true
-        hierarchyError = nil
-        defer { isLoadingHierarchy = false }
-        do {
-            folderLists = try await clickUp.folderLists(folderID: folderID)
-        } catch {
-            hierarchyError = Self.message(from: error)
-        }
-    }
-
-    /// Übernimmt eine Liste als Inbox-Ziel.
-    func selectInbox(_ list: ClickUpList) {
-        settings.inboxListID = list.id
-        settings.inboxListName = list.name
     }
 
     // MARK: - KI-Provider
