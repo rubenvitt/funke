@@ -2,19 +2,22 @@ import SwiftUI
 
 /// Tages-Timeline im Glut-Look: links eine Stunden-Gutter, daneben zwei Spuren —
 /// eine schmale Kalender-Spur (read-only Termine des gewählten Kalenders) und eine
-/// breite Aufgaben-Spur mit Fokus-Blöcken. Auf iOS lassen sich Aufgaben nach kurzem
-/// Long-Press per Drag verschieben (15-Minuten-Raster); sonst rein darstellend.
+/// breite Aufgaben-Spur mit Fokus-Blöcken.
 ///
-/// Bewusst ohne `GeometryReader`: alle Elemente werden über `padding(.leading)` +
-/// `maxWidth:.infinity` + `offset(y:)` positioniert und am Rand geklippt — so kann
-/// nichts horizontal überlaufen (kein versehentliches Querscrollen).
+/// Verschieben läuft über **Standard-Komponenten**: Tippt man auf den Text eines
+/// Blocks, öffnet ein `Menu` mit freien Zeit-Slots (kein Drag-and-Drop, keine custom
+/// Geste → kein Konflikt mit der umgebenden ScrollView). Die Checkbox bleibt ein
+/// eigener Tap zum Abhaken.
 struct TimelineView: View {
     let events: [CalendarEvent]
     /// Nur Aufgaben MIT `startDate` heute.
     let tasks: [TodayTask]
     let isDone: (TodayTask) -> Bool
     let onToggle: (TodayTask) -> Void
-    let onReschedule: (TodayTask, Date) -> Void
+    /// Neue Startzeit für die Aufgabe mit dieser ID (Slot aus dem Menü).
+    let onReschedule: (String, Date) -> Void
+    /// Freie Slot-Vorschläge für eine Aufgabe (vom ViewModel berechnet).
+    let suggestedSlots: (TodayTask) -> [Date]
     let now: Date
 
     // Fester Stundenbereich der Timeline.
@@ -27,10 +30,6 @@ struct TimelineView: View {
     private let gutterW: CGFloat = 34
     private let calW: CGFloat = 88
     private let gap: CGFloat = 8
-
-    // Aktiver Drag (nur eine Karte gleichzeitig).
-    @State private var draggingID: String?
-    @State private var dragY: CGFloat = 0
 
     private var totalHeight: CGFloat { CGFloat((h1 - h0) * 60) * ppm }
     private var taskInset: CGFloat { gutterW + calW + gap }
@@ -53,16 +52,13 @@ struct TimelineView: View {
 
             // Aufgaben-Spur — füllt die Restbreite, nur vertikaler Offset.
             ForEach(visibleTasks) { item in
-                let isDragging = draggingID == item.task.id
                 HStack(spacing: 0) {
                     Color.clear.frame(width: taskInset)
-                    taskCard(item.task, baseMinutes: item.startMinutes)
+                    taskCard(item.task)
                         .frame(maxWidth: .infinity)
                 }
                 .frame(height: item.height)
-                .offset(y: item.top + (isDragging ? dragY : 0))
-                .shadow(color: .black.opacity(isDragging ? 0.18 : 0), radius: isDragging ? 10 : 0, x: 0, y: isDragging ? 6 : 0)
-                .zIndex(isDragging ? 1 : 0)
+                .offset(y: item.top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,7 +126,7 @@ struct TimelineView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func taskCard(_ task: TodayTask, baseMinutes: Int) -> some View {
+    private func taskCard(_ task: TodayTask) -> some View {
         let done = isDone(task)
         // Akzent-Fläche nur für Flamme/Feuer; Funke und ohne Art bleiben „surface".
         let focus = task.art == .flamme || task.art == .feuer
@@ -149,29 +145,32 @@ struct TimelineView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(task.name) erledigen")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(FunkeTheme.text)
-                    .strikethrough(done)
-                    .lineLimit(2)
-                if let label = task.art?.focusLabel {
-                    Text(label)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(FunkeTheme.accent)
+            // Tap auf den Text öffnet das Verschieben-Menü.
+            Menu {
+                rescheduleMenu(for: task)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(FunkeTheme.text)
+                        .strikethrough(done)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if let label = task.art?.focusLabel {
+                        Text(label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(FunkeTheme.accent)
+                            .lineLimit(1)
+                    }
+                    Text("\(Self.hm.string(from: task.startDate ?? now))–\(Self.hm.string(from: endDate))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(FunkeTheme.dim)
                         .lineLimit(1)
                 }
-                Text("\(Self.hm.string(from: task.startDate ?? now))–\(Self.hm.string(from: endDate))")
-                    .font(.system(size: 10))
-                    .foregroundStyle(FunkeTheme.dim)
-                    .lineLimit(1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .contentShape(Rectangle())
             }
-            // Ziehfläche nur über dem Textbereich — Checkbox-Tap löst keinen Drag aus.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .contentShape(Rectangle())
-            #if os(iOS)
-            .gesture(drag(for: task, baseMinutes: baseMinutes))
-            #endif
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -190,6 +189,23 @@ struct TimelineView: View {
         .opacity(done ? 0.5 : 1)
     }
 
+    /// Menü-Inhalt zum Verschieben: freie Slots als Buttons.
+    @ViewBuilder
+    private func rescheduleMenu(for task: TodayTask) -> some View {
+        let slots = suggestedSlots(task)
+        if slots.isEmpty {
+            Text("Kein freier Slot heute")
+        } else {
+            Section("Verschieben auf") {
+                ForEach(slots, id: \.self) { slot in
+                    Button(slot.formatted(date: .omitted, time: .shortened)) {
+                        onReschedule(task.id, slot)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Sichtbare, auf das Zeitfenster geklemmte Elemente
 
     private struct PositionedEvent: Identifiable {
@@ -202,7 +218,6 @@ struct TimelineView: View {
     private struct PositionedTask: Identifiable {
         let id: String
         let task: TodayTask
-        let startMinutes: Int
         let top: CGFloat
         let height: CGFloat
     }
@@ -223,52 +238,11 @@ struct TimelineView: View {
             let raw = minutes(task.startDate ?? now)
             let start = min(max(raw, h0 * 60), h1 * 60 - 15)
             return PositionedTask(
-                id: task.id, task: task, startMinutes: start,
+                id: task.id, task: task,
                 top: y(forMinutes: start), height: height(forMinutes: task.durationMinutes)
             )
         }
     }
-
-    // MARK: - Drag-Logik (iOS)
-
-    // Verschieben erst nach kurzem Long-Press aktivieren — sonst „kämpft" der
-    // vertikale Drag mit der vertikalen ScrollView von „Heute" (SwiftUI gäbe dem
-    // Scrollen den Vorrang). Long-Press → Block hebt sich an → ziehen → loslassen.
-    #if os(iOS)
-    private func drag(for task: TodayTask, baseMinutes: Int) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.28)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    draggingID = task.id
-                    dragY = 0
-                case .second(true, let drag):
-                    draggingID = task.id
-                    dragY = drag?.translation.height ?? 0
-                default:
-                    break
-                }
-            }
-            .onEnded { value in
-                defer { draggingID = nil; dragY = 0 }
-                guard case .second(true, let drag?) = value else { return }
-
-                let deltaMin = Int((drag.translation.height / ppm).rounded())
-                let raw = baseMinutes + deltaMin
-                let snapped = Int((Double(raw) / 15).rounded()) * 15
-                let lo = h0 * 60
-                let hi = max(lo, h1 * 60 - task.durationMinutes)
-                let clamped = min(max(snapped, lo), hi)
-
-                if clamped != baseMinutes {
-                    let day = Calendar.current.startOfDay(for: task.startDate ?? now)
-                    let newStart = Calendar.current.date(byAdding: .minute, value: clamped, to: day) ?? day
-                    onReschedule(task, newStart)
-                }
-            }
-    }
-    #endif
 
     // MARK: - Geometrie-Helfer
 

@@ -8,16 +8,23 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical) {
-                content
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 32)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Inhalt hart auf die ScrollView-Breite klemmen: Eine vertikale ScrollView
+            // schlägt für die Quer-Achse teils eine unbegrenzte Breite vor, und
+            // .frame(maxWidth: .infinity) deckelt eine zu breite Hülle nicht hart →
+            // contentSize wird breiter als der Viewport → seitlicher Scrollspielraum
+            // (die „Drift"). Mit einer festen Breite kann das nicht passieren.
+            GeometryReader { proxy in
+                ScrollView(.vertical) {
+                    content
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                        .frame(width: proxy.size.width, alignment: .leading)
+                }
+                .scrollIndicators(.visible, axes: .vertical)
+                .background(FunkeTheme.background)
+                .refreshable { await viewModel.load() }
+                .task { await viewModel.load() }
             }
-            .scrollIndicators(.visible, axes: .vertical)
-            .background(FunkeTheme.background)
-            .refreshable { await viewModel.load() }
-            .task { await viewModel.load() }
         }
     }
 
@@ -157,7 +164,8 @@ struct TodayView: View {
                 tasks: viewModel.scheduled.filter { $0.startDate != nil },
                 isDone: viewModel.isDone,
                 onToggle: { task in Task { await viewModel.complete(task) } },
-                onReschedule: { task, date in Task { await viewModel.reschedule(task, to: date) } },
+                onReschedule: { id, date in Task { await viewModel.reschedule(taskID: id, to: date) } },
+                suggestedSlots: { viewModel.suggestedSlots(for: $0) },
                 now: Date()
             )
         }
@@ -210,8 +218,34 @@ struct TodayView: View {
                         .foregroundStyle(FunkeTheme.dim)
                         .accessibilityLabel(priority.displayName)
                 }
+
+                Menu {
+                    slotMenu(for: task)
+                } label: {
+                    Label("Einplanen", systemImage: "calendar.badge.plus")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(FunkeTheme.accent)
+                }
+                .buttonStyle(.plain)
             }
             .opacity(done ? 0.5 : 1)
+        }
+    }
+
+    /// Menü-Inhalt zum Einplanen einer Aufgabe: freie Slots als Buttons.
+    @ViewBuilder
+    private func slotMenu(for task: TodayTask) -> some View {
+        let slots = viewModel.suggestedSlots(for: task)
+        if slots.isEmpty {
+            Text("Kein freier Slot heute")
+        } else {
+            Section("Einplanen auf") {
+                ForEach(slots, id: \.self) { slot in
+                    Button(slot.formatted(date: .omitted, time: .shortened)) {
+                        Task { await viewModel.reschedule(taskID: task.id, to: slot) }
+                    }
+                }
+            }
         }
     }
 

@@ -160,6 +160,47 @@ final class TodayViewModel: ObservableObject {
 
     // MARK: - Timeline-Verschieben (optimistisch)
 
+    /// Wie `reschedule(_:to:)`, aber löst die Aufgabe per ID auf — für das Einplanen
+    /// per Menü (auch nicht-eingeplante/überfällige Aufgaben werden so terminiert).
+    func reschedule(taskID: String, to newStart: Date) async {
+        guard let task = tasks.first(where: { $0.id == taskID }) else { return }
+        await reschedule(task, to: newStart)
+    }
+
+    /// Vorschläge für freie Start-Slots (30-Min-Raster, 8–19 Uhr), die die Dauer der
+    /// Aufgabe ohne Überlappung mit Terminen/anderen Blöcken aufnehmen. Höchstens `limit`,
+    /// ab der nächsten halben Stunde (mind. ab Tagesbeginn der Timeline).
+    func suggestedSlots(for task: TodayTask, limit: Int = 6) -> [Date] {
+        let h0 = 8, h1 = 19
+        let day = calendar.startOfDay(for: now())
+        let dur = task.durationMinutes
+
+        func mins(_ d: Date) -> Int {
+            let c = calendar.dateComponents([.hour, .minute], from: d)
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
+
+        // Belegte Intervalle (Minuten seit Mitternacht): Termine + andere geplante Blöcke.
+        var busy: [(Int, Int)] = events.map { (mins($0.start), max(mins($0.start) + 15, mins($0.end))) }
+        busy += tasks
+            .filter { $0.id != task.id && $0.startDate != nil }
+            .map { let s = mins($0.startDate!); return (s, s + $0.durationMinutes) }
+
+        let nowMin = mins(now())
+        let firstSlot = max(h0 * 60, Int((Double(nowMin) / 30).rounded(.up)) * 30)
+
+        var slots: [Date] = []
+        var m = firstSlot
+        while m + dur <= h1 * 60 && slots.count < limit {
+            let overlaps = busy.contains { m < $0.1 && $0.0 < m + dur }
+            if !overlaps, let date = calendar.date(byAdding: .minute, value: m, to: day) {
+                slots.append(date)
+            }
+            m += 30
+        }
+        return slots
+    }
+
     /// Verschiebt den Start eines Fokus-Blocks; behält die Dauer (due = start + Dauer).
     func reschedule(_ task: TodayTask, to newStart: Date) async {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
