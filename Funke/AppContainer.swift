@@ -87,7 +87,11 @@ final class AppContainer: ObservableObject {
         CockpitTaskClient(inner: inner, relay: {
             let raw = UserDefaults.standard.string(forKey: AppSettings.relayBaseURLKey) ?? ""
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, let base = URL(string: trimmed), base.scheme != nil else { return nil }
+            // Nur HTTPS: ATS würde http:// blockieren, und der Netzfehler hielte die
+            // Aufgabe dauerhaft in der Queue statt sie direkt an Zunder zu schicken.
+            guard !trimmed.isEmpty,
+                  let base = URL(string: trimmed),
+                  base.scheme?.lowercased() == "https" else { return nil }
             let token = (secrets.string(for: .relayToken) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { return nil }
             return (baseURL: base, token: token)
