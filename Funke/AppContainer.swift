@@ -91,7 +91,8 @@ final class AppContainer: ObservableObject {
             // Aufgabe dauerhaft in der Queue statt sie direkt an Zunder zu schicken.
             guard !trimmed.isEmpty,
                   let base = URL(string: trimmed),
-                  base.scheme?.lowercased() == "https" else { return nil }
+                  base.scheme?.lowercased() == "https",
+                  let host = base.host, !host.isEmpty else { return nil }
             let token = (secrets.string(for: .relayToken) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { return nil }
             return (baseURL: base, token: token)
