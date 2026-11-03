@@ -13,6 +13,10 @@ enum ClassifyPrompt {
     Veredele die Eingabe zu einem knappen Titel und einem aufgeräumten Body \
     (korrigiere offensichtliche Tipp-/Erkennungsfehler, formatiere sinnvoll, \
     füge aber NICHTS hinzu und bewahre die Bedeutung).
+    Bei einer Aufgabe: Steht am Ende der Eingabe eine Fälligkeit (z. B. heute, \
+    morgen, übermorgen, ein Wochentag, ein Datum wie 14.10., auch mit bis/am davor), \
+    ein #Ziel oder +woche, setze diese Wörter unverändert und klein geschrieben \
+    ans Ende des Titels, ohne Satzzeichen danach.
     Antworte AUSSCHLIESSLICH als JSON-Objekt – ohne Erklärung, ohne Codeblock:
     {"kind":"task|note","title":"<knapp>","body":"<aufgeräumt>"}
     Antworte auf Deutsch, falls die Eingabe deutsch ist.

@@ -9,7 +9,7 @@ final class AppSettings: ObservableObject {
         static let enrichmentEnabled = "enrichmentEnabled"
         static let activeProvider = "activeProvider"
         static let openRouterModel = "openRouterModel"
-        static let relayBaseURL = "relayBaseURL"
+        static let relayBaseURL = AppSettings.relayBaseURLKey
         static let noteFolder = "noteFolder"
         static let vaultBookmark = "vaultBookmark"
     }
@@ -17,6 +17,10 @@ final class AppSettings: ObservableObject {
     /// UserDefaults-Schlüssel der Zunder-Server-URL. Bewusst `nonisolated`, damit
     /// der `ZunderClient` sie außerhalb des MainActors frisch lesen kann.
     nonisolated static let zunderBaseURLKey = "zunderBaseURL"
+
+    /// UserDefaults-Schlüssel der Relay-URL, aus demselben Grund `nonisolated`:
+    /// Der `CockpitTaskClient` liest sie bei jeder Aufgabe frisch.
+    nonisolated static let relayBaseURLKey = "relayBaseURL"
 
     /// Schlüssel aus der ClickUp-Zeit, die beim Start entfernt werden (harter Umstieg).
     private static let retiredKeys = ["teamID", "inboxListID", "inboxListName"]

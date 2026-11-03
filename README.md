@@ -41,7 +41,14 @@ xcodebuild -scheme Funke -destination 'platform=iOS Simulator,name=iPhone 17' te
    er wird nur einmal angezeigt). In Funke eintragen und **Verbindung testen** – das speichert den Token im
    Schlüsselbund und zeigt den verbundenen Nutzer (`GET /api/me`). Eine Listenwahl gibt es nicht: Aufgaben
    landen immer in der Zunder-**Inbox**. In Zunders Verlauf erscheinen sie mit der Quelle `api:<Token-Name>`.
-3. **Optional KI:** API-Key(s) eintragen, Provider wählen, KI-Veredelung aktivieren. Default-Provider ist **Apple On-Device** (kostenlos, privat, kein Key). OpenRouter-Default-Modell: `openai/gpt-5-nano` (in den Einstellungen änderbar). Anthropic-Modell: `claude-haiku-4-5`.
+3. **Optional Vault Cockpit:** Als Relay-URL `<Cockpit-URL>/funke` und als Relay-Token einen Cockpit-Token mit
+   dem Recht **Capture** eintragen. Dann gehen Notizen in den Capture-Ordner und Aufgaben über
+   `POST <Relay-URL>/tasks` ans Cockpit, das die Schnelleingabe-Syntax auswertet: `morgen.` am Ende wird zur
+   Fälligkeit, `#gesundheit` zum Ziel, `+woche` zum Phönix-Schritt. Kennt das Relay `/tasks` nicht (404/405)
+   oder ist im Cockpit kein Zunder eingerichtet (503), legt Funke die Aufgabe wie ohne Relay direkt in der
+   Zunder-Inbox an. Offline bleibt die Aufgabe in der Queue und geht später mit derselben ID ans Cockpit
+   (dort idempotent).
+4. **Optional KI:** API-Key(s) eintragen, Provider wählen, KI-Veredelung aktivieren. Default-Provider ist **Apple On-Device** (kostenlos, privat, kein Key). OpenRouter-Default-Modell: `openai/gpt-5-nano` (in den Einstellungen änderbar). Anthropic-Modell: `claude-haiku-4-5`.
 
 ### Apple Cloud (Private Cloud Compute) aktivieren
 

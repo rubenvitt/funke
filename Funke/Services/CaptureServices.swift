@@ -18,7 +18,7 @@ enum CaptureServices {
             await MainActor.run { AppContainer.buildSink(settings: settings, secrets: keychain) }
         })
         let router = CaptureRouter(
-            zunder: zunder, drafts: drafts, noteSink: sink, queue: queue, enrichment: enrichment
+            zunder: AppContainer.makeTaskClient(inner: zunder, secrets: keychain), drafts: drafts, noteSink: sink, queue: queue, enrichment: enrichment
         )
         return (router, settings)
     }

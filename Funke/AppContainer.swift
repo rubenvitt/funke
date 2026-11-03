@@ -44,7 +44,7 @@ final class AppContainer: ObservableObject {
         self.noteSink = sink
 
         let captureRouter = CaptureRouter(
-            zunder: zunderClient, drafts: drafts, noteSink: sink, queue: offlineQueue,
+            zunder: Self.makeTaskClient(inner: zunderClient, secrets: keychain), drafts: drafts, noteSink: sink, queue: offlineQueue,
             enrichment: enrichmentService
         )
         self.router = captureRouter
@@ -78,6 +78,25 @@ final class AppContainer: ObservableObject {
             baseURL: { UserDefaults.standard.string(forKey: AppSettings.zunderBaseURLKey) },
             factory: factory
         )
+    }
+
+    /// Aufgaben gehen zuerst ans Cockpit (Relay-URL + Relay-Token), damit dort die
+    /// Schnelleingabe-Syntax greift; ohne Relay oder ohne Zunder im Cockpit direkt
+    /// an Zunder (siehe `CockpitTaskClient`).
+    nonisolated static func makeTaskClient(inner: ZunderClienting, secrets: SecretStoring) -> ZunderClienting {
+        CockpitTaskClient(inner: inner, relay: {
+            let raw = UserDefaults.standard.string(forKey: AppSettings.relayBaseURLKey) ?? ""
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Nur HTTPS: ATS würde http:// blockieren, und der Netzfehler hielte die
+            // Aufgabe dauerhaft in der Queue statt sie direkt an Zunder zu schicken.
+            guard !trimmed.isEmpty,
+                  let base = URL(string: trimmed),
+                  base.scheme?.lowercased() == "https",
+                  let host = base.host, !host.isEmpty else { return nil }
+            let token = (secrets.string(for: .relayToken) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else { return nil }
+            return (baseURL: base, token: token)
+        })
     }
 
     /// Wählt den plattformgerechten NoteSink: macOS schreibt (bei vorhandenem
